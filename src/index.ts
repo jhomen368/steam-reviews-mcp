@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { config } from './config.js';
 import { summarizeReviews, analyzeTopicFocused } from './utils/analysis.js';
+import { VERSION } from './version.js';
 import type { SteamGame, ReviewStats, GameInfoCriteria } from './types.js';
 
 /**
@@ -422,6 +423,26 @@ function meetsGameCriteria(
  * registers tool handlers, and connects to the stdio transport.
  */
 async function main() {
+  // Global error handlers
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled Rejection:', reason);
+    process.exit(1);
+  });
+
+  // Graceful shutdown handlers
+  const shutdown = () => {
+    console.error('Shutting down gracefully...');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
   // Initialize Steam API client with configuration
   const steamClient = new SteamAPIClient(config);
 
@@ -429,7 +450,7 @@ async function main() {
   const server = new Server(
     {
       name: 'steam-reviews-mcp',
-      version: '0.1.0',
+      version: VERSION,
     },
     {
       capabilities: {
@@ -679,14 +700,17 @@ async function main() {
         const errorMessages = error.issues
           .map((e) => `${e.path.join('.')}: ${e.message}`)
           .join('; ');
+        console.error(`Validation error in tool ${name}:`, errorMessages);
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify(
                 {
-                  error: 'Validation error',
+                  error: true,
+                  message: 'Validation error',
                   details: errorMessages,
+                  tool: name,
                 },
                 null,
                 2
@@ -697,16 +721,19 @@ async function main() {
         };
       }
 
-      // Handle other errors
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      // Enhanced error reporting for other errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Error in tool ${name}:`, errorMessage);
+
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(
               {
-                error: 'Tool execution failed',
-                details: errorMessage,
+                error: true,
+                message: errorMessage,
+                tool: name,
               },
               null,
               2
@@ -723,7 +750,10 @@ async function main() {
   await server.connect(transport);
 
   // Log to stderr (stdout is used for MCP communication)
-  console.error('Steam Reviews MCP Server running on stdio');
+  console.error(`Steam Reviews MCP Server v${VERSION} running on stdio`);
+  console.error(
+    `Cache: ${config.cacheEnabled ? 'enabled' : 'disabled'}, Rate limiting: ${config.rateLimitEnabled ? 'enabled' : 'disabled'}`
+  );
 }
 
 // Start the server

@@ -11,6 +11,7 @@
     "build": "tsc",
     "prepare": "npm run build",
     "dev": "node --loader ts-node/esm src/index.ts",
+    "start": "node build/index.js",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
