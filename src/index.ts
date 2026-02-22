@@ -74,6 +74,50 @@ const tools: Tool[] = [
       required: ['appIds'],
     },
   },
+  {
+    name: 'fetch_reviews',
+    description:
+      'Fetch actual user reviews for a Steam game with filtering and pagination support. Returns review text, author info, timestamps, and voting data. Use this to get raw review content for analysis.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: {
+          type: 'number',
+          description: 'Steam AppID of the game',
+        },
+        filter: {
+          type: 'string',
+          enum: ['all', 'recent', 'updated'],
+          description: 'Review filter (default: all)',
+        },
+        language: {
+          type: 'string',
+          description: 'Language code (e.g., "english", "schinese", Steam format)',
+        },
+        reviewType: {
+          type: 'string',
+          enum: ['all', 'positive', 'negative'],
+          description: 'Filter by review sentiment (default: all)',
+        },
+        purchaseType: {
+          type: 'string',
+          enum: ['all', 'steam', 'non_steam_purchase'],
+          description: 'Filter by purchase type (default: all)',
+        },
+        limit: {
+          type: 'number',
+          description: 'Number of reviews to fetch (default: 20, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
+        cursor: {
+          type: 'string',
+          description: 'Pagination cursor from previous response',
+        },
+      },
+      required: ['appId'],
+    },
+  },
 ];
 
 /**
@@ -91,6 +135,19 @@ const getGameInfoSchema = z.object({
   appIds: z.array(z.number()).min(1).max(10),
   includeStats: z.boolean().optional(),
   includeCurrentPlayers: z.boolean().optional(),
+});
+
+/**
+ * Zod schema for validating fetch_reviews input.
+ */
+const fetchReviewsSchema = z.object({
+  appId: z.number(),
+  filter: z.enum(['all', 'recent', 'updated']).optional(),
+  language: z.string().optional(),
+  reviewType: z.enum(['all', 'positive', 'negative']).optional(),
+  purchaseType: z.enum(['all', 'steam', 'non_steam_purchase']).optional(),
+  limit: z.number().min(1).max(100).optional(),
+  cursor: z.string().optional(),
 });
 
 /**
@@ -247,6 +304,27 @@ async function main() {
             {
               type: 'text',
               text: JSON.stringify(enrichedGames, null, 2),
+            },
+          ],
+        };
+      } else if (name === 'fetch_reviews') {
+        const validatedInput = fetchReviewsSchema.parse(args);
+
+        // Fetch reviews using SteamAPIClient
+        const result = await steamClient.getAppReviews(validatedInput.appId, {
+          filter: validatedInput.filter,
+          language: validatedInput.language,
+          reviewType: validatedInput.reviewType,
+          purchaseType: validatedInput.purchaseType,
+          limit: validatedInput.limit,
+          cursor: validatedInput.cursor,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
