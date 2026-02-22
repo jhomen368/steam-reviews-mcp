@@ -10,10 +10,11 @@
 
 import axios from 'axios';
 import type { AxiosResponse } from 'axios';
+import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
-import type { ServerConfig } from '../types.js';
+import type { ServerConfig, SteamGame, SteamAppDetailsResponse } from '../types.js';
 
 /**
  * User agent string for Steam API requests
@@ -196,5 +197,287 @@ export class SteamAPIClient {
    */
   resetRateLimiter(): void {
     this.rateLimiter.reset();
+  }
+
+  /**
+   * Search for games on the Steam store by name/keywords.
+   *
+   * This method scrapes the Steam search results page since Steam doesn't
+   * provide a dedicated search API. Results are cached for 2 hours.
+   *
+   * @param query - Search query (game name or keywords)
+   * @param limit - Maximum number of results to return (default: 10)
+   * @returns Promise resolving to an array of SteamGame objects
+   *
+   * @example
+   * ```typescript
+   * const games = await client.searchGames('Dota', 5);
+   * console.log(games[0].name); // "Dota 2"
+   * ```
+   */
+  async searchGames(query: string, limit: number = 10): Promise<SteamGame[]> {
+    const cacheKey = `search_${query}_${limit}`;
+
+    // Check cache first
+    if (this.config.cacheEnabled) {
+      const cached = this.cache.get(cacheKey) as SteamGame[] | undefined;
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    // Build search URL
+    const searchUrl = `https://store.steampowered.com/search/?term=${encodeURIComponent(query)}`;
+
+    // Fetch HTML content using the get method for rate limiting and retry
+    const html = await this.get<string>(searchUrl);
+
+    // Parse HTML with cheerio
+    const $ = cheerio.load(html);
+    const results: SteamGame[] = [];
+
+    // Select search result rows
+    $('.search_result_row').each((index, element) => {
+      if (results.length >= limit) {
+        return false; // Stop iteration when limit reached
+      }
+
+      const $row = $(element);
+
+      // Extract AppID from data attribute
+      const appIdStr = $row.attr('data-ds-appid');
+      if (!appIdStr) {
+        return; // Skip if no AppID
+      }
+      const appId = parseInt(appIdStr, 10);
+      if (isNaN(appId)) {
+        return; // Skip if AppID is not a valid number
+      }
+
+      // Extract game name
+      const name = $row.find('.title').text().trim();
+
+      // Extract price
+      const priceText = $row.find('.search_price').text().trim();
+      const priceFormatted = this.parsePriceText(priceText);
+
+      // Extract image URL
+      const headerImage = $row.find('.search_capsule img').attr('src') || undefined;
+
+      // Extract release date (if available)
+      const releaseDate = $row.find('.search_released').text().trim() || undefined;
+
+      // Build SteamGame object
+      const game: SteamGame = {
+        appId,
+        name,
+        headerImage,
+        releaseDate,
+        priceFormatted,
+      };
+
+      results.push(game);
+    });
+
+    // Cache the results
+    if (this.config.cacheEnabled) {
+      this.cache.set(cacheKey, results, this.config.cacheTTL.gameInfo);
+    }
+
+    return results;
+  }
+
+  /**
+   * Parse price text from Steam search results.
+   *
+   * @param priceText - Raw price text from search result
+   * @returns Formatted price string or undefined
+   */
+  private parsePriceText(priceText: string): string | undefined {
+    // Clean up the price text
+    const cleaned = priceText.replace(/\s+/g, ' ').trim();
+
+    // Handle free to play
+    if (cleaned.toLowerCase().includes('free')) {
+      return 'Free';
+    }
+
+    // Handle discounted prices (take the final price)
+    // Format is often "Original Price\nFinal Price" or just "Price"
+    const lines = cleaned
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length > 0) {
+      // Return the last non-empty line (final price after discount)
+      return lines[lines.length - 1] || undefined;
+    }
+
+    return cleaned || undefined;
+  }
+
+  /**
+   * Get detailed information for one or more games by AppID.
+   *
+   * Uses Steam's appdetails API to fetch comprehensive game information.
+   * Each game is cached individually for efficient subsequent lookups.
+   *
+   * @param appIds - Single AppID or array of AppIDs to fetch
+   * @returns Promise resolving to an array of SteamGame objects
+   *
+   * @example
+   * ```typescript
+   * // Single game
+   * const games = await client.getAppDetails(570);
+   *
+   * // Multiple games
+   * const games = await client.getAppDetails([570, 730]);
+   * ```
+   */
+  async getAppDetails(appIds: number | number[]): Promise<SteamGame[]> {
+    // Normalize to array
+    const appIdArray = Array.isArray(appIds) ? appIds : [appIds];
+
+    // Check cache for each game individually
+    const results: SteamGame[] = [];
+    const uncachedAppIds: number[] = [];
+
+    for (const appId of appIdArray) {
+      const cacheKey = `game_${appId}`;
+      if (this.config.cacheEnabled) {
+        const cached = this.cache.get(cacheKey) as SteamGame | undefined;
+        if (cached !== undefined) {
+          results.push(cached);
+          continue;
+        }
+      }
+      uncachedAppIds.push(appId);
+    }
+
+    // If all games were cached, return early
+    if (uncachedAppIds.length === 0) {
+      return results;
+    }
+
+    // Build API URL with comma-separated AppIDs
+    const appIdsParam = uncachedAppIds.join(',');
+    const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${appIdsParam}&cc=us&l=english`;
+
+    // Fetch data from Steam API
+    const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
+
+    // Process each game's response
+    for (const appId of uncachedAppIds) {
+      const appIdStr = appId.toString();
+      const gameData = response[appIdStr];
+
+      if (gameData && gameData.success && gameData.data) {
+        const steamGame = this.normalizeAppDetails(gameData.data);
+
+        // Cache the normalized game data
+        const cacheKey = `game_${appId}`;
+        if (this.config.cacheEnabled) {
+          this.cache.set(cacheKey, steamGame, this.config.cacheTTL.gameInfo);
+        }
+
+        results.push(steamGame);
+      }
+      // If success is false, we simply don't add this game to results
+      // This handles cases where the AppID doesn't exist or is not a game
+    }
+
+    return results;
+  }
+
+  /**
+   * Normalize Steam API app details response to SteamGame interface.
+   *
+   * @param data - Raw game data from Steam API
+   * @returns Normalized SteamGame object
+   */
+  private normalizeAppDetails(data: NonNullable<SteamAppDetailsResponse['data']>): SteamGame {
+    const game: SteamGame = {
+      appId: data.steam_appid,
+      name: data.name,
+      description: data.detailed_description,
+      shortDescription: data.short_description,
+      headerImage: data.header_image,
+      developers: data.developers,
+      publishers: data.publishers,
+      releaseDate: data.release_date?.date,
+      isFree: data.is_free,
+      platforms: data.platforms
+        ? {
+            windows: data.platforms.windows,
+            mac: data.platforms.mac,
+            linux: data.platforms.linux,
+          }
+        : undefined,
+      metacriticScore: data.metacritic?.score,
+      genres: data.genres?.map((g) => g.description),
+      tags: data.genres?.map((g) => g.description), // Use genres as tags for now
+    };
+
+    // Handle price data
+    if (data.price_overview) {
+      game.priceFormatted = data.price_overview.final_formatted;
+      game.priceRaw = data.price_overview.final;
+      game.currency = data.price_overview.currency;
+    } else if (data.is_free) {
+      game.priceFormatted = 'Free';
+      game.priceRaw = 0;
+    }
+
+    return game;
+  }
+
+  /**
+   * Get the current number of players for a game.
+   *
+   * Uses Steam's ISteamUserStats API to get real-time player counts.
+   * Results are cached for 5 minutes.
+   *
+   * @param appId - Steam AppID to query
+   * @returns Promise resolving to the current player count
+   *
+   * @example
+   * ```typescript
+   * const players = await client.getCurrentPlayers(570);
+   * console.log(`Dota 2 has ${players} players online`);
+   * ```
+   */
+  async getCurrentPlayers(appId: number): Promise<number> {
+    const cacheKey = `players_${appId}`;
+
+    // Check cache first
+    if (this.config.cacheEnabled) {
+      const cached = this.cache.get(cacheKey) as number | undefined;
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    // Build API URL
+    const apiUrl = `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=${appId}`;
+
+    // Fetch data from Steam API
+    interface PlayerCountResponse {
+      response: {
+        player_count: number;
+        result: number;
+      };
+    }
+
+    const response = await this.get<PlayerCountResponse>(apiUrl);
+
+    // Extract player count
+    const playerCount = response.response?.player_count ?? 0;
+
+    // Cache the result
+    if (this.config.cacheEnabled) {
+      this.cache.set(cacheKey, playerCount, this.config.cacheTTL.statistics);
+    }
+
+    return playerCount;
   }
 }
