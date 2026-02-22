@@ -14,7 +14,7 @@ import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
-import type { ServerConfig, SteamGame, SteamAppDetailsResponse } from '../types.js';
+import type { ServerConfig, SteamGame, SteamAppDetailsResponse, ReviewStats } from '../types.js';
 
 /**
  * User agent string for Steam API requests
@@ -479,5 +479,77 @@ export class SteamAPIClient {
     }
 
     return playerCount;
+  }
+
+  /**
+   * Get review summary for a game.
+   *
+   * Uses Steam's appreviews API to get the overall review score summary.
+   * This provides the Steam user review classification (e.g., "Very Positive", "Mixed").
+   * Results are cached for the statistics TTL period.
+   *
+   * @param appId - Steam AppID to query
+   * @returns Promise resolving to ReviewStats object with score information
+   *
+   * @example
+   * ```typescript
+   * const stats = await client.getReviewSummary(570);
+   * console.log(`Dota 2: ${stats.scoreText} (${stats.scorePercent}%)`);
+   * ```
+   */
+  async getReviewSummary(appId: number): Promise<ReviewStats | null> {
+    const cacheKey = `review_summary_${appId}`;
+
+    // Check cache first
+    if (this.config.cacheEnabled) {
+      const cached = this.cache.get(cacheKey) as ReviewStats | undefined;
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
+
+    // Build API URL - request just the summary, no actual reviews
+    const apiUrl = `https://store.steampowered.com/appreviews/${appId}?json=1&purchase_type=all&language=all&num_per_page=0`;
+
+    // Fetch data from Steam API
+    interface ReviewSummaryResponse {
+      success: number;
+      query_summary?: {
+        num_reviews: number;
+        review_score: number;
+        review_score_desc: string;
+        total_positive: number;
+        total_negative: number;
+        total_reviews: number;
+      };
+    }
+
+    const response = await this.get<ReviewSummaryResponse>(apiUrl);
+
+    // Check for valid response
+    if (response.success !== 1 || !response.query_summary) {
+      return null;
+    }
+
+    const summary = response.query_summary;
+
+    // Build ReviewStats object
+    const reviewStats: ReviewStats = {
+      totalReviews: summary.total_reviews,
+      totalPositive: summary.total_positive,
+      totalNegative: summary.total_negative,
+      scorePercent:
+        summary.total_reviews > 0
+          ? Math.round((summary.total_positive / summary.total_reviews) * 100)
+          : 0,
+      scoreText: summary.review_score_desc,
+    };
+
+    // Cache the result
+    if (this.config.cacheEnabled) {
+      this.cache.set(cacheKey, reviewStats, this.config.cacheTTL.statistics);
+    }
+
+    return reviewStats;
   }
 }
