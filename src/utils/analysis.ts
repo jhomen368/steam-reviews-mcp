@@ -8,10 +8,113 @@
  */
 
 import natural from 'natural';
-import type { SentimentAnalysis, Review, ReviewAnalysis } from '../types.js';
+import type { SentimentAnalysis, Review, ReviewAnalysis, ExampleQuote } from '../types.js';
 
 // Extract needed components from natural library
 const { SentimentAnalyzer, PorterStemmer } = natural;
+
+/**
+ * Maximum length for review excerpts
+ */
+const MAX_EXCERPT_LENGTH = 200;
+
+/**
+ * Maximum number of example quotes to include in analysis
+ */
+const MAX_EXAMPLE_QUOTES = 5;
+
+/**
+ * Generate a Steam community URL for a specific review
+ *
+ * @param appId - Steam AppID of the game
+ * @param recommendationId - The review's unique recommendation ID
+ * @returns Full Steam community URL to the review
+ */
+export function generateReviewUrl(appId: number, recommendationId: string): string {
+  return `https://steamcommunity.com/profiles/recommended/${appId}/${recommendationId}`;
+}
+
+/**
+ * Truncate text to a maximum length, adding ellipsis if needed
+ *
+ * @param text - Text to truncate
+ * @param maxLength - Maximum length (default: MAX_EXCERPT_LENGTH)
+ * @returns Truncated text with ellipsis if needed
+ */
+function truncateText(text: string, maxLength: number = MAX_EXCERPT_LENGTH): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  // Find a good break point (space) near the max length
+  const breakPoint = text.lastIndexOf(' ', maxLength - 3);
+  if (breakPoint > maxLength / 2) {
+    return text.substring(0, breakPoint) + '...';
+  }
+  return text.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Select representative example quotes from reviews
+ *
+ * Selects a mix of positive and negative reviews, prioritizing those with
+ * more helpful votes and substantive content.
+ *
+ * @param reviews - Array of reviews to select from
+ * @param appId - Steam AppID for generating URLs
+ * @param maxQuotes - Maximum number of quotes to return
+ * @returns Array of ExampleQuote objects
+ */
+export function selectExampleQuotes(
+  reviews: Review[],
+  appId: number,
+  maxQuotes: number = MAX_EXAMPLE_QUOTES
+): ExampleQuote[] {
+  if (reviews.length === 0) {
+    return [];
+  }
+
+  // Separate positive and negative reviews
+  const positiveReviews = reviews.filter((r) => r.votedUp);
+  const negativeReviews = reviews.filter((r) => !r.votedUp);
+
+  // Sort each group by helpful votes (descending)
+  const sortedPositive = [...positiveReviews].sort((a, b) => b.votesHelpful - a.votesHelpful);
+  const sortedNegative = [...negativeReviews].sort((a, b) => b.votesHelpful - a.votesHelpful);
+
+  // Select quotes alternating between positive and negative
+  const quotes: ExampleQuote[] = [];
+  const positiveCount = Math.ceil(maxQuotes / 2);
+  const negativeCount = maxQuotes - positiveCount;
+
+  // Add top positive reviews
+  for (let i = 0; i < Math.min(positiveCount, sortedPositive.length); i++) {
+    const review = sortedPositive[i];
+    quotes.push({
+      excerpt: truncateText(review.review.trim()),
+      url: generateReviewUrl(appId, review.recommendationId),
+      isPositive: true,
+      votesHelpful: review.votesHelpful,
+      playtimeHours: Math.round(review.author.playtimeAtReview / 60),
+      authorSteamId: review.author.steamId,
+    });
+  }
+
+  // Add top negative reviews
+  for (let i = 0; i < Math.min(negativeCount, sortedNegative.length); i++) {
+    const review = sortedNegative[i];
+    quotes.push({
+      excerpt: truncateText(review.review.trim()),
+      url: generateReviewUrl(appId, review.recommendationId),
+      isPositive: false,
+      votesHelpful: review.votesHelpful,
+      playtimeHours: Math.round(review.author.playtimeAtReview / 60),
+      authorSteamId: review.author.steamId,
+    });
+  }
+
+  // Sort final quotes by helpful votes for better presentation
+  return quotes.sort((a, b) => b.votesHelpful - a.votesHelpful).slice(0, maxQuotes);
+}
 
 /**
  * Analyze sentiment of review text
@@ -181,11 +284,13 @@ export function extractKeywords(text: string, limit = 10): string[] {
  * - Keyword extraction from positive and negative reviews separately
  * - Overall sentiment calculation
  * - Summary text generation
+ * - Example quotes with clickable Steam community links
  *
  * @param reviews - Array of Review objects to analyze
+ * @param appId - Steam AppID for generating review URLs (optional, enables example quotes)
  * @returns ReviewAnalysis object with comprehensive insights
  */
-export function summarizeReviews(reviews: Review[]): ReviewAnalysis {
+export function summarizeReviews(reviews: Review[], appId?: number): ReviewAnalysis {
   if (reviews.length === 0) {
     return {
       summary: 'No reviews to analyze',
@@ -233,6 +338,9 @@ export function summarizeReviews(reviews: Review[]): ReviewAnalysis {
     `Overall sentiment is ${overallLabel} (score: ${avgScore.toFixed(2)}). ` +
     `Common themes: ${commonThemes.slice(0, 5).join(', ')}.`;
 
+  // Select example quotes if appId is provided
+  const exampleQuotes = appId ? selectExampleQuotes(reviews, appId) : undefined;
+
   return {
     summary,
     sentiment: {
@@ -245,6 +353,7 @@ export function summarizeReviews(reviews: Review[]): ReviewAnalysis {
     negativeKeywords,
     totalAnalyzed: reviews.length,
     sampleSize: reviews.length,
+    exampleQuotes,
   };
 }
 
@@ -256,9 +365,14 @@ export function summarizeReviews(reviews: Review[]): ReviewAnalysis {
  *
  * @param reviews - Array of Review objects to search through
  * @param topic - The topic/keyword to filter reviews by
+ * @param appId - Steam AppID for generating review URLs (optional, enables example quotes)
  * @returns ReviewAnalysis object focused on the specified topic
  */
-export function analyzeTopicFocused(reviews: Review[], topic: string): ReviewAnalysis {
+export function analyzeTopicFocused(
+  reviews: Review[],
+  topic: string,
+  appId?: number
+): ReviewAnalysis {
   // Filter reviews that mention the topic
   const topicLower = topic.toLowerCase();
   const relevantReviews = reviews.filter((r) => r.review.toLowerCase().includes(topicLower));
@@ -275,8 +389,8 @@ export function analyzeTopicFocused(reviews: Review[], topic: string): ReviewAna
     };
   }
 
-  // Analyze only the relevant reviews
-  const baseAnalysis = summarizeReviews(relevantReviews);
+  // Analyze only the relevant reviews (pass appId for example quotes)
+  const baseAnalysis = summarizeReviews(relevantReviews, appId);
 
   // Update summary to mention topic focus
   const topicSummary =
