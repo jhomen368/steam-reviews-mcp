@@ -2,7 +2,9 @@ node_modules/
 build/
 dist/
 .env
-.env.*
+.env.local
+.env.*.local
+!.env.example
 .DS_Store
 logs/
 *.log
