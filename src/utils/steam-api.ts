@@ -14,7 +14,16 @@ import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
-import type { ServerConfig, SteamGame, SteamAppDetailsResponse, ReviewStats } from '../types.js';
+import type {
+  ServerConfig,
+  SteamGame,
+  SteamAppDetailsResponse,
+  ReviewStats,
+  FetchReviewsInput,
+  PaginatedReviewsResponse,
+  Review,
+  SteamReviewsResponse,
+} from '../types.js';
 
 /**
  * User agent string for Steam API requests
@@ -551,5 +560,124 @@ export class SteamAPIClient {
     }
 
     return reviewStats;
+  }
+
+  /**
+   * Fetch reviews for a game with filtering and pagination support.
+   *
+   * Uses Steam's appreviews API to get actual review text and details.
+   * Only the first page (without cursor) is cached to avoid pagination issues.
+   *
+   * @param appId - Steam AppID to query
+   * @param options - Optional filtering and pagination options
+   * @returns Promise resolving to paginated reviews response
+   *
+   * @example
+   * ```typescript
+   * // Basic fetch
+   * const result = await client.getAppReviews(570, { limit: 10 });
+   * console.log(`Fetched ${result.reviews.length} reviews`);
+   *
+   * // With filters
+   * const positive = await client.getAppReviews(570, {
+   *   reviewType: 'positive',
+   *   language: 'english',
+   *   limit: 20
+   * });
+   *
+   * // Pagination
+   * const page2 = await client.getAppReviews(570, {
+   *   cursor: page1.cursor
+   * });
+   * ```
+   */
+  async getAppReviews(
+    appId: number,
+    options?: Partial<FetchReviewsInput>
+  ): Promise<PaginatedReviewsResponse> {
+    // Build query parameters
+    const params = new URLSearchParams({
+      json: '1',
+      filter: options?.filter || 'all',
+      language: options?.language || 'all',
+      review_type: options?.reviewType || 'all',
+      purchase_type: options?.purchaseType || 'all',
+      num_per_page: String(Math.min(options?.limit || 20, 100)), // Max 100
+    });
+
+    // Add cursor for pagination if provided
+    if (options?.cursor) {
+      params.set('cursor', options.cursor);
+    }
+
+    // Build cache key (only for first page, without cursor)
+    const cacheKey = options?.cursor
+      ? undefined
+      : `reviews_${appId}_${options?.filter || 'all'}_${options?.language || 'all'}_${options?.reviewType || 'all'}_${options?.purchaseType || 'all'}`;
+
+    // Build API URL
+    const apiUrl = `https://store.steampowered.com/appreviews/${appId}?${params.toString()}`;
+
+    // Fetch data from Steam API
+    const response = await this.get<SteamReviewsResponse>(
+      apiUrl,
+      cacheKey,
+      cacheKey ? this.config.cacheTTL.reviews : undefined
+    );
+
+    // Check for valid response
+    if (response.success !== 1) {
+      return {
+        reviews: [],
+        cursor: null,
+        hasMore: false,
+        totalFetched: 0,
+      };
+    }
+
+    // Normalize reviews
+    const normalizedReviews = this.normalizeReviews(response.reviews || []);
+
+    // Build paginated response
+    const result: PaginatedReviewsResponse = {
+      reviews: normalizedReviews,
+      cursor: response.cursor || null,
+      hasMore: normalizedReviews.length === (options?.limit || 20),
+      totalFetched: normalizedReviews.length,
+    };
+
+    return result;
+  }
+
+  /**
+   * Normalize Steam API reviews response to Review interface.
+   *
+   * @param reviews - Raw reviews array from Steam API
+   * @returns Normalized Review array
+   */
+  private normalizeReviews(reviews: NonNullable<SteamReviewsResponse['reviews']>): Review[] {
+    return reviews.map((review) => ({
+      recommendationId: review.recommendationid,
+      author: {
+        steamId: review.author.steamid,
+        numGamesOwned: review.author.num_games_owned,
+        numReviews: review.author.num_reviews,
+        playtimeForever: review.author.playtime_forever,
+        playtimeAtReview: review.author.playtime_at_review,
+        lastPlayed: review.author.last_played,
+      },
+      language: review.language,
+      review: review.review,
+      timestampCreated: review.timestamp_created,
+      timestampUpdated: review.timestamp_updated,
+      votedUp: review.voted_up,
+      votesUp: review.votes_up,
+      votesFunny: review.votes_funny,
+      votesHelpful: review.votes_up, // Use votes_up as votesHelpful
+      commentCount: review.comment_count,
+      steamPurchase: review.steam_purchase,
+      receivedForFree: review.received_for_free,
+      writtenDuringEarlyAccess: review.written_during_early_access,
+    }));
   }
 }
