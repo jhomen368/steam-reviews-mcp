@@ -4,6 +4,17 @@
   "description": "MCP server for querying and analyzing Steam game reviews",
   "main": "build/index.js",
   "type": "module",
+  "keywords": ["mcp", "steam", "reviews", "sentiment-analysis", "model-context-protocol"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhomen368/steam-reviews-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jhomen368/steam-reviews-mcp/issues"
+  },
+  "homepage": "https://github.com/jhomen368/steam-reviews-mcp#readme",
+  "author": "",
+  "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
   },
