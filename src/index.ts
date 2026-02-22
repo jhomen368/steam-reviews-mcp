@@ -188,7 +188,7 @@ const tools: Tool[] = [
   {
     name: 'analyze_reviews',
     description:
-      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Supports optional topic drill-down and time-bounded analysis.',
+      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Supports optional topic drill-down, time-bounded analysis, and pre-fetched reviews.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -229,6 +229,15 @@ const tools: Tool[] = [
         steamDeckOnly: {
           type: 'boolean',
           description: 'Only analyze Steam Deck reviews (experimental)',
+        },
+        preFetchedReviews: {
+          type: 'array',
+          items: {
+            type: 'object',
+            description: 'Review object from fetch_reviews tool',
+          },
+          description:
+            'Optional: Pre-fetched reviews to analyze instead of fetching new ones. Useful to avoid duplicate API calls. If provided, sampleSize, language, reviewType, dayRange, and filtering parameters are ignored.',
         },
       },
       required: ['appId'],
@@ -302,6 +311,7 @@ const analyzeReviewsSchema = z.object({
   dayRange: z.number().min(1).optional(),
   filterOfftopicActivity: z.boolean().optional(),
   steamDeckOnly: z.boolean().optional(),
+  preFetchedReviews: z.array(z.any()).optional(), // z.any() since Review type is complex
 });
 
 /**
@@ -583,36 +593,44 @@ async function main() {
       } else if (name === 'analyze_reviews') {
         const validatedInput = analyzeReviewsSchema.parse(args);
 
-        const sampleSize = validatedInput.sampleSize || 100;
+        let allReviews: import('./types.js').Review[];
 
-        // Fetch reviews for analysis
-        const reviewsResponse = await steamClient.getAppReviews(validatedInput.appId, {
-          language: validatedInput.language,
-          reviewType: validatedInput.reviewType,
-          limit: Math.min(sampleSize, 100), // Steam API max per page
-          dayRange: validatedInput.dayRange,
-          filterOfftopicActivity: validatedInput.filterOfftopicActivity,
-          steamDeckOnly: validatedInput.steamDeckOnly,
-        });
+        if (validatedInput.preFetchedReviews && validatedInput.preFetchedReviews.length > 0) {
+          // Use pre-fetched reviews (type assertion)
+          allReviews = validatedInput.preFetchedReviews as import('./types.js').Review[];
+        } else {
+          // Fetch reviews as before
+          const sampleSize = validatedInput.sampleSize || 100;
 
-        let allReviews = reviewsResponse.reviews;
-
-        // Fetch additional pages if needed to reach sample size
-        if (sampleSize > 100 && reviewsResponse.cursor) {
-          const remaining = sampleSize - allReviews.length;
-          const secondPageSize = Math.min(remaining, 100);
-
-          const page2 = await steamClient.getAppReviews(validatedInput.appId, {
+          // Fetch reviews for analysis
+          const reviewsResponse = await steamClient.getAppReviews(validatedInput.appId, {
             language: validatedInput.language,
             reviewType: validatedInput.reviewType,
-            limit: secondPageSize,
-            cursor: reviewsResponse.cursor,
+            limit: Math.min(sampleSize, 100), // Steam API max per page
             dayRange: validatedInput.dayRange,
             filterOfftopicActivity: validatedInput.filterOfftopicActivity,
             steamDeckOnly: validatedInput.steamDeckOnly,
           });
 
-          allReviews = [...allReviews, ...page2.reviews];
+          allReviews = reviewsResponse.reviews;
+
+          // Fetch additional pages if needed to reach sample size
+          if (sampleSize > 100 && reviewsResponse.cursor) {
+            const remaining = sampleSize - allReviews.length;
+            const secondPageSize = Math.min(remaining, 100);
+
+            const page2 = await steamClient.getAppReviews(validatedInput.appId, {
+              language: validatedInput.language,
+              reviewType: validatedInput.reviewType,
+              limit: secondPageSize,
+              cursor: reviewsResponse.cursor,
+              dayRange: validatedInput.dayRange,
+              filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+              steamDeckOnly: validatedInput.steamDeckOnly,
+            });
+
+            allReviews = [...allReviews, ...page2.reviews];
+          }
         }
 
         // Handle case where no reviews were found
