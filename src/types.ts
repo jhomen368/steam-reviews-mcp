@@ -78,6 +78,18 @@ export interface ReviewStats {
 }
 
 /**
+ * Filter criteria for game info
+ */
+export interface GameInfoCriteria {
+  minReviewScore?: number; // Minimum review score percentage (0-100)
+  minReviews?: number; // Minimum number of reviews
+  maxPrice?: number; // Maximum price in cents
+  requireFree?: boolean; // Only free games
+  requireMetacritic?: boolean; // Only games with metacritic scores
+  minMetacritic?: number; // Minimum metacritic score (0-100)
+}
+
+/**
  * Sentiment analysis result
  */
 export interface SentimentAnalysis {

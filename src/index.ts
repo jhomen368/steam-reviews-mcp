@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { config } from './config.js';
 import { summarizeReviews, analyzeTopicFocused } from './utils/analysis.js';
-import type { SearchGamesInput, SteamGame, ReviewStats } from './types.js';
+import type { SearchGamesInput, SteamGame, ReviewStats, GameInfoCriteria } from './types.js';
 
 /**
  * Tool definitions for the MCP server.
@@ -52,7 +52,7 @@ const tools: Tool[] = [
   {
     name: 'get_game_info',
     description:
-      'Get detailed information about one or more Steam games by AppID. Returns comprehensive game data including description, price, developers, publishers, platforms, metacritic score, review statistics, and an informational summary.',
+      'Get detailed information about one or more Steam games by AppID. Returns comprehensive game data including description, price, developers, publishers, platforms, metacritic score, review statistics, and an info summary. Supports filtering by review quality criteria.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -70,6 +70,43 @@ const tools: Tool[] = [
         includeCurrentPlayers: {
           type: 'boolean',
           description: 'Include current player count (default: false)',
+        },
+        criteria: {
+          type: 'object',
+          description:
+            'Optional filter criteria - only games matching ALL criteria will be returned',
+          properties: {
+            minReviewScore: {
+              type: 'number',
+              description: 'Minimum review score percentage (0-100)',
+              minimum: 0,
+              maximum: 100,
+            },
+            minReviews: {
+              type: 'number',
+              description: 'Minimum number of total reviews',
+              minimum: 0,
+            },
+            maxPrice: {
+              type: 'number',
+              description: 'Maximum price in cents (e.g., 1999 for $19.99)',
+              minimum: 0,
+            },
+            requireFree: {
+              type: 'boolean',
+              description: 'Only include free games',
+            },
+            requireMetacritic: {
+              type: 'boolean',
+              description: 'Only include games with metacritic scores',
+            },
+            minMetacritic: {
+              type: 'number',
+              description: 'Minimum metacritic score (0-100)',
+              minimum: 0,
+              maximum: 100,
+            },
+          },
         },
       },
       required: ['appIds'],
@@ -165,12 +202,25 @@ const searchGamesSchema = z.object({
 });
 
 /**
+ * Zod schema for validating game info criteria.
+ */
+const gameInfoCriteriaSchema = z.object({
+  minReviewScore: z.number().min(0).max(100).optional(),
+  minReviews: z.number().min(0).optional(),
+  maxPrice: z.number().min(0).optional(),
+  requireFree: z.boolean().optional(),
+  requireMetacritic: z.boolean().optional(),
+  minMetacritic: z.number().min(0).max(100).optional(),
+});
+
+/**
  * Zod schema for validating get_game_info input.
  */
 const getGameInfoSchema = z.object({
   appIds: z.array(z.number()).min(1).max(10),
   includeStats: z.boolean().optional(),
   includeCurrentPlayers: z.boolean().optional(),
+  criteria: gameInfoCriteriaSchema.optional(),
 });
 
 /**
@@ -241,6 +291,64 @@ function generateInfoSummary(game: SteamGame, reviewStats?: ReviewStats | null):
 }
 
 /**
+ * Check if a game meets the specified criteria.
+ *
+ * All criteria are AND conditions - the game must meet ALL specified criteria.
+ *
+ * @param game - Steam game data with optional review stats
+ * @param criteria - Filter criteria to check against
+ * @returns True if the game meets all criteria, false otherwise
+ */
+function meetsGameCriteria(
+  game: SteamGame & { reviewStats?: ReviewStats | null },
+  criteria: GameInfoCriteria
+): boolean {
+  // Check min review score
+  if (criteria.minReviewScore !== undefined) {
+    if (!game.reviewStats || game.reviewStats.scorePercent < criteria.minReviewScore) {
+      return false;
+    }
+  }
+
+  // Check min reviews
+  if (criteria.minReviews !== undefined) {
+    if (!game.reviewStats || game.reviewStats.totalReviews < criteria.minReviews) {
+      return false;
+    }
+  }
+
+  // Check max price
+  if (criteria.maxPrice !== undefined) {
+    if (game.priceRaw === undefined || game.priceRaw > criteria.maxPrice) {
+      return false;
+    }
+  }
+
+  // Check require free
+  if (criteria.requireFree === true) {
+    if (!game.isFree) {
+      return false;
+    }
+  }
+
+  // Check require metacritic
+  if (criteria.requireMetacritic === true) {
+    if (!game.metacriticScore) {
+      return false;
+    }
+  }
+
+  // Check min metacritic
+  if (criteria.minMetacritic !== undefined) {
+    if (!game.metacriticScore || game.metacriticScore < criteria.minMetacritic) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Main entry point for the Steam Reviews MCP Server.
  *
  * Initializes the Steam API client, creates the MCP server,
@@ -303,8 +411,9 @@ async function main() {
         // Fetch game details
         const games = await steamClient.getAppDetails(validatedInput.appIds);
 
-        // Fetch review summaries for all games (default: include stats)
-        const includeStats = validatedInput.includeStats !== false;
+        // Determine if we need review stats (default: include, or required for criteria)
+        const hasCriteria = validatedInput.criteria !== undefined;
+        const includeStats = validatedInput.includeStats !== false || hasCriteria;
         const reviewSummaries = new Map<number, ReviewStats | null>();
 
         if (includeStats) {
@@ -336,15 +445,28 @@ async function main() {
           );
         }
 
-        // Add info summary and review stats
-        const enrichedGames = games.map((game) => {
+        // Build enriched games with review stats attached
+        const gamesWithStats = games.map((game) => {
           const reviewStats = reviewSummaries.get(game.appId);
           return {
             ...game,
             reviewStats: includeStats ? reviewStats : undefined,
-            infoSummary: generateInfoSummary(game, reviewStats),
           };
         });
+
+        // Filter by criteria if provided
+        let filteredGames = gamesWithStats;
+        if (validatedInput.criteria) {
+          filteredGames = gamesWithStats.filter((game) =>
+            meetsGameCriteria(game, validatedInput.criteria!)
+          );
+        }
+
+        // Generate info summaries for filtered results
+        const enrichedGames = filteredGames.map((game) => ({
+          ...game,
+          infoSummary: generateInfoSummary(game, game.reviewStats ?? null),
+        }));
 
         return {
           content: [
