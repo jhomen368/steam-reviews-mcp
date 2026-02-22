@@ -20,6 +20,7 @@ import {
 import { z } from 'zod';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { config } from './config.js';
+import { summarizeReviews } from './utils/analysis.js';
 import type { SearchGamesInput, SteamGame, ReviewStats } from './types.js';
 
 /**
@@ -118,6 +119,36 @@ const tools: Tool[] = [
       required: ['appId'],
     },
   },
+  {
+    name: 'analyze_reviews',
+    description:
+      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Returns a comprehensive analysis including positive/negative keywords, overall sentiment score, and a summary of what players are saying.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: {
+          type: 'number',
+          description: 'Steam AppID of the game to analyze',
+        },
+        sampleSize: {
+          type: 'number',
+          description: 'Number of reviews to analyze (default: 100, max: 200)',
+          minimum: 10,
+          maximum: 200,
+        },
+        language: {
+          type: 'string',
+          description: 'Filter reviews by language (e.g., "english", "schinese")',
+        },
+        reviewType: {
+          type: 'string',
+          enum: ['all', 'positive', 'negative'],
+          description: 'Filter by review sentiment (default: all)',
+        },
+      },
+      required: ['appId'],
+    },
+  },
 ];
 
 /**
@@ -148,6 +179,16 @@ const fetchReviewsSchema = z.object({
   purchaseType: z.enum(['all', 'steam', 'non_steam_purchase']).optional(),
   limit: z.number().min(1).max(100).optional(),
   cursor: z.string().optional(),
+});
+
+/**
+ * Zod schema for validating analyze_reviews input.
+ */
+const analyzeReviewsSchema = z.object({
+  appId: z.number(),
+  sampleSize: z.number().min(10).max(200).optional(),
+  language: z.string().optional(),
+  reviewType: z.enum(['all', 'positive', 'negative']).optional(),
 });
 
 /**
@@ -325,6 +366,65 @@ async function main() {
             {
               type: 'text',
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } else if (name === 'analyze_reviews') {
+        const validatedInput = analyzeReviewsSchema.parse(args);
+
+        const sampleSize = validatedInput.sampleSize || 100;
+
+        // Fetch reviews for analysis
+        const reviewsResponse = await steamClient.getAppReviews(validatedInput.appId, {
+          language: validatedInput.language,
+          reviewType: validatedInput.reviewType,
+          limit: Math.min(sampleSize, 100), // Steam API max per page
+        });
+
+        let allReviews = reviewsResponse.reviews;
+
+        // Fetch additional pages if needed to reach sample size
+        if (sampleSize > 100 && reviewsResponse.cursor) {
+          const remaining = sampleSize - allReviews.length;
+          const secondPageSize = Math.min(remaining, 100);
+
+          const page2 = await steamClient.getAppReviews(validatedInput.appId, {
+            language: validatedInput.language,
+            reviewType: validatedInput.reviewType,
+            limit: secondPageSize,
+            cursor: reviewsResponse.cursor,
+          });
+
+          allReviews = [...allReviews, ...page2.reviews];
+        }
+
+        // Handle case where no reviews were found
+        if (allReviews.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: 'No reviews found',
+                    details: 'No reviews were found for the specified game and filters.',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // Analyze the reviews
+        const analysis = summarizeReviews(allReviews);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(analysis, null, 2),
             },
           ],
         };
