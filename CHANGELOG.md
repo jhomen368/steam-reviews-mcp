@@ -5,7 +5,7 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - 2026-02-22
+## [1.0.0] - 2026-02-23
 
 ### Added
 
@@ -90,4 +90,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Node.js 18+ required
 - ES modules (ESM) architecture
 
-[0.1.0]: https://github.com/jhomen368/steam-reviews-mcp/releases/tag/v0.1.0
+[1.0.0]: https://github.com/jhomen368/steam-reviews-mcp/releases/tag/v1.0.0

@@ -1,8 +1,8 @@
 # Steam Reviews MCP Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/steam-reviews-mcp)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/steam-reviews-mcp/pkgs/container/steam-reviews-mcp)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
 > **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for Steam game reviews and analysis. Search games, fetch reviews, and analyze sentiment with AI assistants like Claude.**
@@ -197,11 +197,11 @@ CACHE_MAX_SIZE=1000                   # Max cache entries
 
 # Rate limiting
 RATE_LIMIT_ENABLED=true               # Enable rate limiting (default: true)
-MAX_REQUESTS_PER_MINUTE=30           # Max API calls per minute
+MAX_REQUESTS_PER_MINUTE=30            # Max API calls per minute
 
 # HTTP mode (for Docker)
 HTTP_MODE=false                       # Enable HTTP transport
-PORT=8086                            # HTTP server port
+PORT=8086                             # HTTP server port
 ```
 
 ## 📚 Documentation
@@ -211,6 +211,12 @@ PORT=8086                            # HTTP server port
 - **[Steam Store API](https://steamapi.xpaw.me/)** - Steam API reference
 
 ## 🔧 Troubleshooting
+
+### Connection Issues
+
+- Verify Steam Store API is accessible (no firewall blocks)
+- Check rate limiting if receiving 429 errors
+- Review logs for timeout errors
 
 ### Docker Issues
 ```bash

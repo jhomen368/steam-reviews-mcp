@@ -781,9 +781,9 @@ async function runHttp(port: number) {
   // MCP endpoint for SSE connections
   app.get('/mcp', async (req, res) => {
     console.error('New MCP SSE connection established');
-    
+
     const transport = new SSEServerTransport('/message', res);
-    
+
     // Create a new server instance for this connection
     const server = new Server(
       {
@@ -937,13 +937,19 @@ async function runHttp(port: number) {
 
           if (allReviews.length === 0) {
             return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  error: 'No reviews found',
-                  details: 'No reviews were found for the specified game and filters.',
-                }, null, 2),
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      error: 'No reviews found',
+                      details: 'No reviews were found for the specified game and filters.',
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
             };
           }
 
@@ -962,18 +968,26 @@ async function runHttp(port: number) {
         throw new Error(`Unknown tool: ${name}`);
       } catch (error) {
         if (error instanceof z.ZodError) {
-          const errorMessages = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+          const errorMessages = error.issues
+            .map((e) => `${e.path.join('.')}: ${e.message}`)
+            .join('; ');
           console.error(`Validation error in tool ${name}:`, errorMessages);
           return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                error: true,
-                message: 'Validation error',
-                details: errorMessages,
-                tool: name,
-              }, null, 2),
-            }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    error: true,
+                    message: 'Validation error',
+                    details: errorMessages,
+                    tool: name,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
             isError: true,
           };
         }
@@ -981,14 +995,20 @@ async function runHttp(port: number) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`Error in tool ${name}:`, errorMessage);
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              error: true,
-              message: errorMessage,
-              tool: name,
-            }, null, 2),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: true,
+                  message: errorMessage,
+                  tool: name,
+                },
+                null,
+                2
+              ),
+            },
+          ],
           isError: true,
         };
       }

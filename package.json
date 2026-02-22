@@ -1,10 +1,41 @@
 {
   "name": "steam-reviews-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "MCP server for querying and analyzing Steam game reviews",
   "main": "build/index.js",
   "type": "module",
   "keywords": ["mcp", "steam", "reviews", "sentiment-analysis", "model-context-protocol"],
+  "mcp": {
+    "server": {
+      "transport": "stdio",
+      "tools": [
+        {
+          "name": "search_steam_games",
+          "description": "Search for Steam games by name or keywords with batch support"
+        },
+        {
+          "name": "get_game_info",
+          "description": "Get detailed information about Steam games including system requirements and DLC"
+        },
+        {
+          "name": "fetch_reviews",
+          "description": "Fetch user reviews for Steam games with advanced filtering options"
+        },
+        {
+          "name": "analyze_reviews",
+          "description": "Analyze Steam game reviews for sentiment, themes, and insights"
+        }
+      ]
+    }
+  },
+  "bin": {
+    "steam-reviews-mcp": "./build/index.js"
+  },
+  "files": [
+    "build/",
+    "README.md",
+    "LICENSE"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jhomen368/steam-reviews-mcp.git"
