@@ -593,7 +593,11 @@ export class SteamAPIClient {
    */
   async getAppReviews(
     appId: number,
-    options?: Partial<FetchReviewsInput>
+    options?: Partial<FetchReviewsInput> & {
+      dayRange?: number;
+      filterOfftopicActivity?: boolean;
+      steamDeckOnly?: boolean;
+    }
   ): Promise<PaginatedReviewsResponse> {
     // Build query parameters
     const params = new URLSearchParams({
@@ -610,10 +614,25 @@ export class SteamAPIClient {
       params.set('cursor', options.cursor);
     }
 
+    // Add day_range filter (only reviews from last N days)
+    if (options?.dayRange) {
+      params.set('day_range', String(options.dayRange));
+    }
+
+    // Add filter_offtopic_activity (0 shows review bombs, 1 filters them)
+    if (options?.filterOfftopicActivity !== undefined) {
+      params.set('filter_offtopic_activity', options.filterOfftopicActivity ? '1' : '0');
+    }
+
+    // Note: Steam Deck filtering is experimental and may not work reliably
+    if (options?.steamDeckOnly) {
+      params.set('steam_deck', '1');
+    }
+
     // Build cache key (only for first page, without cursor)
     const cacheKey = options?.cursor
       ? undefined
-      : `reviews_${appId}_${options?.filter || 'all'}_${options?.language || 'all'}_${options?.reviewType || 'all'}_${options?.purchaseType || 'all'}`;
+      : `reviews_${appId}_${options?.filter || 'all'}_${options?.language || 'all'}_${options?.reviewType || 'all'}_${options?.purchaseType || 'all'}_${options?.dayRange || ''}_${options?.filterOfftopicActivity ?? ''}_${options?.steamDeckOnly ?? ''}`;
 
     // Build API URL
     const apiUrl = `https://store.steampowered.com/appreviews/${appId}?${params.toString()}`;

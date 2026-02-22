@@ -115,7 +115,7 @@ const tools: Tool[] = [
   {
     name: 'fetch_reviews',
     description:
-      'Fetch actual user reviews for a Steam game with filtering and pagination support. Returns review text, author info, timestamps, and voting data. Use this to get raw review content for analysis.',
+      'Fetch actual user reviews for a Steam game with advanced filtering and pagination support. Returns review text, author info, timestamps, and voting data. Supports time-bounded queries and review bomb filtering.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,6 +152,20 @@ const tools: Tool[] = [
           type: 'string',
           description: 'Pagination cursor from previous response',
         },
+        dayRange: {
+          type: 'number',
+          description: 'Only include reviews from last N days (e.g., 30, 90, 365)',
+          minimum: 1,
+        },
+        filterOfftopicActivity: {
+          type: 'boolean',
+          description:
+            'Filter out review bombing and off-topic activity (default: false to show all reviews)',
+        },
+        steamDeckOnly: {
+          type: 'boolean',
+          description: 'Only include Steam Deck reviews (experimental, may not work reliably)',
+        },
       },
       required: ['appId'],
     },
@@ -159,7 +173,7 @@ const tools: Tool[] = [
   {
     name: 'analyze_reviews',
     description:
-      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Supports optional topic drill-down to focus analysis on specific aspects like "performance", "multiplayer", "graphics", etc.',
+      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Supports optional topic drill-down and time-bounded analysis.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -185,7 +199,21 @@ const tools: Tool[] = [
         topic: {
           type: 'string',
           description:
-            'Optional: Drill down into specific theme or aspect (e.g., "performance", "multiplayer", "graphics", "bugs"). Only reviews mentioning this topic will be analyzed.',
+            'Optional: Drill down into specific theme (e.g., "performance", "multiplayer")',
+        },
+        dayRange: {
+          type: 'number',
+          description: 'Only analyze reviews from last N days (e.g., 30, 90, 365)',
+          minimum: 1,
+        },
+        filterOfftopicActivity: {
+          type: 'boolean',
+          description:
+            'Filter out review bombing (default: false to show all reviews including controversies)',
+        },
+        steamDeckOnly: {
+          type: 'boolean',
+          description: 'Only analyze Steam Deck reviews (experimental)',
         },
       },
       required: ['appId'],
@@ -234,6 +262,9 @@ const fetchReviewsSchema = z.object({
   purchaseType: z.enum(['all', 'steam', 'non_steam_purchase']).optional(),
   limit: z.number().min(1).max(100).optional(),
   cursor: z.string().optional(),
+  dayRange: z.number().min(1).optional(),
+  filterOfftopicActivity: z.boolean().optional(),
+  steamDeckOnly: z.boolean().optional(),
 });
 
 /**
@@ -245,6 +276,9 @@ const analyzeReviewsSchema = z.object({
   language: z.string().optional(),
   reviewType: z.enum(['all', 'positive', 'negative']).optional(),
   topic: z.string().optional(),
+  dayRange: z.number().min(1).optional(),
+  filterOfftopicActivity: z.boolean().optional(),
+  steamDeckOnly: z.boolean().optional(),
 });
 
 /**
@@ -487,6 +521,9 @@ async function main() {
           purchaseType: validatedInput.purchaseType,
           limit: validatedInput.limit,
           cursor: validatedInput.cursor,
+          dayRange: validatedInput.dayRange,
+          filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+          steamDeckOnly: validatedInput.steamDeckOnly,
         });
 
         return {
@@ -507,6 +544,9 @@ async function main() {
           language: validatedInput.language,
           reviewType: validatedInput.reviewType,
           limit: Math.min(sampleSize, 100), // Steam API max per page
+          dayRange: validatedInput.dayRange,
+          filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+          steamDeckOnly: validatedInput.steamDeckOnly,
         });
 
         let allReviews = reviewsResponse.reviews;
@@ -521,6 +561,9 @@ async function main() {
             reviewType: validatedInput.reviewType,
             limit: secondPageSize,
             cursor: reviewsResponse.cursor,
+            dayRange: validatedInput.dayRange,
+            filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+            steamDeckOnly: validatedInput.steamDeckOnly,
           });
 
           allReviews = [...allReviews, ...page2.reviews];
