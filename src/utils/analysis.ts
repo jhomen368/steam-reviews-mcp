@@ -247,3 +247,47 @@ export function summarizeReviews(reviews: Review[]): ReviewAnalysis {
     sampleSize: reviews.length,
   };
 }
+
+/**
+ * Analyze reviews with focus on a specific topic/theme
+ *
+ * Filters reviews to only those mentioning the topic, then performs
+ * comprehensive analysis on the relevant subset.
+ *
+ * @param reviews - Array of Review objects to search through
+ * @param topic - The topic/keyword to filter reviews by
+ * @returns ReviewAnalysis object focused on the specified topic
+ */
+export function analyzeTopicFocused(reviews: Review[], topic: string): ReviewAnalysis {
+  // Filter reviews that mention the topic
+  const topicLower = topic.toLowerCase();
+  const relevantReviews = reviews.filter((r) => r.review.toLowerCase().includes(topicLower));
+
+  if (relevantReviews.length === 0) {
+    return {
+      summary: `No reviews found mentioning "${topic}". Try a different topic or broader search term.`,
+      sentiment: { score: 0, label: 'neutral', confidence: 0 },
+      commonThemes: [],
+      positiveKeywords: [],
+      negativeKeywords: [],
+      totalAnalyzed: 0,
+      sampleSize: reviews.length,
+    };
+  }
+
+  // Analyze only the relevant reviews
+  const baseAnalysis = summarizeReviews(relevantReviews);
+
+  // Update summary to mention topic focus
+  const topicSummary =
+    `Topic-focused analysis on "${topic}": ` +
+    `Found ${relevantReviews.length} reviews (${Math.round((relevantReviews.length / reviews.length) * 100)}% of ${reviews.length} total). ` +
+    baseAnalysis.summary;
+
+  return {
+    ...baseAnalysis,
+    summary: topicSummary,
+    sampleSize: reviews.length, // Total reviews searched
+    totalAnalyzed: relevantReviews.length, // Reviews mentioning topic
+  };
+}

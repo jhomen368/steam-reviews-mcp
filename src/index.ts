@@ -20,7 +20,7 @@ import {
 import { z } from 'zod';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { config } from './config.js';
-import { summarizeReviews } from './utils/analysis.js';
+import { summarizeReviews, analyzeTopicFocused } from './utils/analysis.js';
 import type { SearchGamesInput, SteamGame, ReviewStats } from './types.js';
 
 /**
@@ -122,7 +122,7 @@ const tools: Tool[] = [
   {
     name: 'analyze_reviews',
     description:
-      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Returns a comprehensive analysis including positive/negative keywords, overall sentiment score, and a summary of what players are saying.',
+      'Fetch and analyze Steam game reviews to extract sentiment, common themes, and key insights. Supports optional topic drill-down to focus analysis on specific aspects like "performance", "multiplayer", "graphics", etc.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -144,6 +144,11 @@ const tools: Tool[] = [
           type: 'string',
           enum: ['all', 'positive', 'negative'],
           description: 'Filter by review sentiment (default: all)',
+        },
+        topic: {
+          type: 'string',
+          description:
+            'Optional: Drill down into specific theme or aspect (e.g., "performance", "multiplayer", "graphics", "bugs"). Only reviews mentioning this topic will be analyzed.',
         },
       },
       required: ['appId'],
@@ -189,6 +194,7 @@ const analyzeReviewsSchema = z.object({
   sampleSize: z.number().min(10).max(200).optional(),
   language: z.string().optional(),
   reviewType: z.enum(['all', 'positive', 'negative']).optional(),
+  topic: z.string().optional(),
 });
 
 /**
@@ -417,8 +423,13 @@ async function main() {
           };
         }
 
-        // Analyze the reviews
-        const analysis = summarizeReviews(allReviews);
+        // Analyze reviews - use topic-focused analysis if topic provided
+        let analysis;
+        if (validatedInput.topic) {
+          analysis = analyzeTopicFocused(allReviews, validatedInput.topic);
+        } else {
+          analysis = summarizeReviews(allReviews);
+        }
 
         return {
           content: [
