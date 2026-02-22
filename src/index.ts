@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { config } from './config.js';
 import { summarizeReviews, analyzeTopicFocused } from './utils/analysis.js';
-import type { SearchGamesInput, SteamGame, ReviewStats, GameInfoCriteria } from './types.js';
+import type { SteamGame, ReviewStats, GameInfoCriteria } from './types.js';
 
 /**
  * Tool definitions for the MCP server.
@@ -31,22 +31,29 @@ const tools: Tool[] = [
   {
     name: 'search_steam_games',
     description:
-      'Search for Steam games by name or keywords. Returns basic game information including AppID, name, price, and preview image.',
+      'Search for Steam games by name or keywords. Supports single or batch queries. Returns basic game information including AppID, name, price, and preview image.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Search query (game name or keywords)',
+          description: 'Single search query (game name or keywords)',
+        },
+        queries: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Multiple search queries for batch searching',
+          minItems: 1,
+          maxItems: 5,
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of results to return (default: 10, max: 25)',
+          description: 'Maximum number of results PER QUERY (default: 10, max: 25)',
           minimum: 1,
           maximum: 25,
         },
       },
-      required: ['query'],
+      // Note: Either query OR queries must be provided (validated in Zod)
     },
   },
   {
@@ -223,11 +230,17 @@ const tools: Tool[] = [
 
 /**
  * Zod schema for validating search_steam_games input.
+ * Supports both single query and batch queries.
  */
-const searchGamesSchema = z.object({
-  query: z.string().min(1, 'Query cannot be empty'),
-  limit: z.number().min(1).max(25).optional(),
-});
+const searchGamesSchema = z
+  .object({
+    query: z.string().optional(),
+    queries: z.array(z.string()).min(1).max(5).optional(),
+    limit: z.number().min(1).max(25).optional(),
+  })
+  .refine((data) => data.query || data.queries, {
+    message: 'Either query or queries must be provided',
+  });
 
 /**
  * Zod schema for validating game info criteria.
@@ -423,13 +436,21 @@ async function main() {
     try {
       if (name === 'search_steam_games') {
         // Validate input using Zod schema
-        const validatedInput = searchGamesSchema.parse(args) as SearchGamesInput;
+        const validatedInput = searchGamesSchema.parse(args);
 
-        // Call Steam API client to search for games
-        const results = await steamClient.searchGames(
-          validatedInput.query,
-          validatedInput.limit ?? 10
-        );
+        let results: SteamGame[];
+
+        if (validatedInput.queries) {
+          // Batch search - execute all queries in parallel
+          const allResults = await Promise.all(
+            validatedInput.queries.map((q) => steamClient.searchGames(q, validatedInput.limit))
+          );
+          // Flatten results from all queries
+          results = allResults.flat();
+        } else {
+          // Single search
+          results = await steamClient.searchGames(validatedInput.query!, validatedInput.limit);
+        }
 
         return {
           content: [
