@@ -59,7 +59,7 @@ const tools: Tool[] = [
   {
     name: 'get_game_info',
     description:
-      'Get detailed information about one or more Steam games by AppID. Returns comprehensive game data including description, price, developers, publishers, platforms, metacritic score, review statistics, and an info summary. Supports filtering by review quality criteria.',
+      'Get detailed information about one or more Steam games by AppID. Returns comprehensive game data including description, price, developers, publishers, platforms, metacritic score, review statistics, and optionally system requirements and DLC list. Supports filtering by review quality criteria.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -114,6 +114,14 @@ const tools: Tool[] = [
               maximum: 100,
             },
           },
+        },
+        includeRequirements: {
+          type: 'boolean',
+          description: 'Include system requirements (PC minimum/recommended specs)',
+        },
+        includeDlc: {
+          type: 'boolean',
+          description: 'Include list of available DLC',
         },
       },
       required: ['appIds'],
@@ -262,6 +270,8 @@ const getGameInfoSchema = z.object({
   includeStats: z.boolean().optional(),
   includeCurrentPlayers: z.boolean().optional(),
   criteria: gameInfoCriteriaSchema.optional(),
+  includeRequirements: z.boolean().optional(),
+  includeDlc: z.boolean().optional(),
 });
 
 /**
@@ -509,10 +519,25 @@ async function main() {
           };
         });
 
+        // Strip out optional fields if not requested
+        const processedGames = gamesWithStats.map((game) => {
+          const processed = { ...game };
+
+          if (!validatedInput.includeRequirements) {
+            delete processed.systemRequirements;
+          }
+
+          if (!validatedInput.includeDlc) {
+            delete processed.dlc;
+          }
+
+          return processed;
+        });
+
         // Filter by criteria if provided
-        let filteredGames = gamesWithStats;
+        let filteredGames = processedGames;
         if (validatedInput.criteria) {
-          filteredGames = gamesWithStats.filter((game) =>
+          filteredGames = processedGames.filter((game) =>
             meetsGameCriteria(game, validatedInput.criteria!)
           );
         }
@@ -610,11 +635,12 @@ async function main() {
         }
 
         // Analyze reviews - use topic-focused analysis if topic provided
+        // Pass appId to enable example quotes with clickable Steam community links
         let analysis;
         if (validatedInput.topic) {
-          analysis = analyzeTopicFocused(allReviews, validatedInput.topic);
+          analysis = analyzeTopicFocused(allReviews, validatedInput.topic, validatedInput.appId);
         } else {
-          analysis = summarizeReviews(allReviews);
+          analysis = summarizeReviews(allReviews, validatedInput.appId);
         }
 
         return {

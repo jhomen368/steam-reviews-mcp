@@ -30,6 +30,15 @@ export interface SteamGame {
     linux?: boolean;
   };
   currentPlayers?: number;
+  // Optional detailed information
+  systemRequirements?: {
+    minimum?: string;
+    recommended?: string;
+  };
+  dlc?: Array<{
+    appId: number;
+    name: string;
+  }>;
 }
 
 /**
@@ -99,6 +108,24 @@ export interface SentimentAnalysis {
 }
 
 /**
+ * Example quote from a review with link
+ */
+export interface ExampleQuote {
+  /** Truncated review excerpt (max ~200 chars) */
+  excerpt: string;
+  /** Full Steam community URL to the review */
+  url: string;
+  /** Whether the review was positive (recommended) */
+  isPositive: boolean;
+  /** Number of helpful votes */
+  votesHelpful: number;
+  /** Author's playtime in hours at time of review */
+  playtimeHours: number;
+  /** Author's steam ID (for profile reference) */
+  authorSteamId: string;
+}
+
+/**
  * Review analysis summary
  */
 export interface ReviewAnalysis {
@@ -109,6 +136,8 @@ export interface ReviewAnalysis {
   negativeKeywords: string[];
   totalAnalyzed: number;
   sampleSize: number;
+  /** Example review quotes with clickable links (max 5) */
+  exampleQuotes?: ExampleQuote[];
 }
 
 /**
@@ -229,6 +258,11 @@ export interface SteamAppDetailsResponse {
       coming_soon: boolean;
       date: string;
     };
+    pc_requirements?: {
+      minimum?: string;
+      recommended?: string;
+    };
+    dlc?: number[];
   };
 }
 

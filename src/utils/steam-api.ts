@@ -437,6 +437,22 @@ export class SteamAPIClient {
       game.priceRaw = 0;
     }
 
+    // System requirements (PC only for simplicity)
+    if (data.pc_requirements) {
+      game.systemRequirements = {
+        minimum: data.pc_requirements.minimum,
+        recommended: data.pc_requirements.recommended,
+      };
+    }
+
+    // DLC list
+    if (data.dlc && Array.isArray(data.dlc)) {
+      game.dlc = data.dlc.slice(0, 10).map((dlcId: number) => ({
+        appId: dlcId,
+        name: `DLC ${dlcId}`, // Note: Names require separate API calls
+      }));
+    }
+
     return game;
   }
 
