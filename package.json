@@ -19,8 +19,9 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
-    "prepare": "npm run build",
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node build/index.js",
     "lint": "eslint src --ext .ts",

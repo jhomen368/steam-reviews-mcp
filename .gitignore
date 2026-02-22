@@ -14,4 +14,9 @@ coverage/
 .idea/
 *.swp
 *.swo
+# Ignore markdown files except documentation
 *.md
+!README.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+!AGENTS.md

@@ -756,8 +756,281 @@ async function main() {
   );
 }
 
-// Start the server
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+/**
+ * Run the server in HTTP mode with SSE transport.
+ * Enables remote access and Docker deployment.
+ */
+async function runHttp(port: number) {
+  const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
+  const express = (await import('express')).default;
+
+  const app = express();
+  app.use(express.json());
+
+  // Health check endpoint
+  app.get('/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'steam-reviews-mcp',
+      version: VERSION,
+      cache: config.cacheEnabled ? 'enabled' : 'disabled',
+      rateLimit: config.rateLimitEnabled ? 'enabled' : 'disabled',
+    });
+  });
+
+  // MCP endpoint for SSE connections
+  app.get('/mcp', async (req, res) => {
+    console.error('New MCP SSE connection established');
+    
+    const transport = new SSEServerTransport('/message', res);
+    
+    // Create a new server instance for this connection
+    const server = new Server(
+      {
+        name: 'steam-reviews-mcp',
+        version: VERSION,
+      },
+      {
+        capabilities: {
+          tools: {},
+        },
+      }
+    );
+
+    // Set up the same handlers
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools,
+    }));
+
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      // Same handler logic as stdio mode
+      const { name, arguments: args } = request.params;
+
+      try {
+        if (name === 'search_steam_games') {
+          const validatedInput = searchGamesSchema.parse(args);
+          let results: SteamGame[];
+
+          if (validatedInput.queries) {
+            const allResults = await Promise.all(
+              validatedInput.queries.map((q) => steamClient.searchGames(q, validatedInput.limit))
+            );
+            results = allResults.flat();
+          } else {
+            results = await steamClient.searchGames(validatedInput.query!, validatedInput.limit);
+          }
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify(results, null, 2) }],
+          };
+        } else if (name === 'get_game_info') {
+          const validatedInput = getGameInfoSchema.parse(args);
+          const games = await steamClient.getAppDetails(validatedInput.appIds);
+          const hasCriteria = validatedInput.criteria !== undefined;
+          const includeStats = validatedInput.includeStats !== false || hasCriteria;
+          const reviewSummaries = new Map<number, ReviewStats | null>();
+
+          if (includeStats) {
+            await Promise.all(
+              games.map(async (game) => {
+                try {
+                  const stats = await steamClient.getReviewSummary(game.appId);
+                  reviewSummaries.set(game.appId, stats);
+                } catch (error) {
+                  console.error(`Failed to get review summary for ${game.appId}:`, error);
+                  reviewSummaries.set(game.appId, null);
+                }
+              })
+            );
+          }
+
+          if (validatedInput.includeCurrentPlayers ?? false) {
+            await Promise.all(
+              games.map(async (game) => {
+                try {
+                  game.currentPlayers = await steamClient.getCurrentPlayers(game.appId);
+                } catch (error) {
+                  console.error(`Failed to get current players for ${game.appId}:`, error);
+                }
+              })
+            );
+          }
+
+          const gamesWithStats = games.map((game) => ({
+            ...game,
+            reviewStats: includeStats ? reviewSummaries.get(game.appId) : undefined,
+          }));
+
+          const processedGames = gamesWithStats.map((game) => {
+            const processed = { ...game };
+            if (!validatedInput.includeRequirements) delete processed.systemRequirements;
+            if (!validatedInput.includeDlc) delete processed.dlc;
+            return processed;
+          });
+
+          let filteredGames = processedGames;
+          if (validatedInput.criteria) {
+            filteredGames = processedGames.filter((game) =>
+              meetsGameCriteria(game, validatedInput.criteria!)
+            );
+          }
+
+          const enrichedGames = filteredGames.map((game) => ({
+            ...game,
+            infoSummary: generateInfoSummary(game, game.reviewStats ?? null),
+          }));
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify(enrichedGames, null, 2) }],
+          };
+        } else if (name === 'fetch_reviews') {
+          const validatedInput = fetchReviewsSchema.parse(args);
+          const result = await steamClient.getAppReviews(validatedInput.appId, {
+            filter: validatedInput.filter,
+            language: validatedInput.language,
+            reviewType: validatedInput.reviewType,
+            purchaseType: validatedInput.purchaseType,
+            limit: validatedInput.limit,
+            cursor: validatedInput.cursor,
+            dayRange: validatedInput.dayRange,
+            filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+            steamDeckOnly: validatedInput.steamDeckOnly,
+          });
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          };
+        } else if (name === 'analyze_reviews') {
+          const validatedInput = analyzeReviewsSchema.parse(args);
+          let allReviews: import('./types.js').Review[];
+
+          if (validatedInput.preFetchedReviews && validatedInput.preFetchedReviews.length > 0) {
+            allReviews = validatedInput.preFetchedReviews as import('./types.js').Review[];
+          } else {
+            const sampleSize = validatedInput.sampleSize || 100;
+            const reviewsResponse = await steamClient.getAppReviews(validatedInput.appId, {
+              language: validatedInput.language,
+              reviewType: validatedInput.reviewType,
+              limit: Math.min(sampleSize, 100),
+              dayRange: validatedInput.dayRange,
+              filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+              steamDeckOnly: validatedInput.steamDeckOnly,
+            });
+
+            allReviews = reviewsResponse.reviews;
+
+            if (sampleSize > 100 && reviewsResponse.cursor) {
+              const remaining = sampleSize - allReviews.length;
+              const secondPageSize = Math.min(remaining, 100);
+              const page2 = await steamClient.getAppReviews(validatedInput.appId, {
+                language: validatedInput.language,
+                reviewType: validatedInput.reviewType,
+                limit: secondPageSize,
+                cursor: reviewsResponse.cursor,
+                dayRange: validatedInput.dayRange,
+                filterOfftopicActivity: validatedInput.filterOfftopicActivity,
+                steamDeckOnly: validatedInput.steamDeckOnly,
+              });
+              allReviews = [...allReviews, ...page2.reviews];
+            }
+          }
+
+          if (allReviews.length === 0) {
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  error: 'No reviews found',
+                  details: 'No reviews were found for the specified game and filters.',
+                }, null, 2),
+              }],
+            };
+          }
+
+          let analysis;
+          if (validatedInput.topic) {
+            analysis = analyzeTopicFocused(allReviews, validatedInput.topic, validatedInput.appId);
+          } else {
+            analysis = summarizeReviews(allReviews, validatedInput.appId);
+          }
+
+          return {
+            content: [{ type: 'text', text: JSON.stringify(analysis, null, 2) }],
+          };
+        }
+
+        throw new Error(`Unknown tool: ${name}`);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          const errorMessages = error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join('; ');
+          console.error(`Validation error in tool ${name}:`, errorMessages);
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                error: true,
+                message: 'Validation error',
+                details: errorMessages,
+                tool: name,
+              }, null, 2),
+            }],
+            isError: true,
+          };
+        }
+
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Error in tool ${name}:`, errorMessage);
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              error: true,
+              message: errorMessage,
+              tool: name,
+            }, null, 2),
+          }],
+          isError: true,
+        };
+      }
+    });
+
+    await server.connect(transport);
+
+    req.on('close', () => {
+      console.error('MCP SSE connection closed');
+    });
+  });
+
+  // Message endpoint for SSE
+  app.post('/message', async (_req, res) => {
+    res.status(200).end();
+  });
+
+  app.listen(port, () => {
+    console.error(`Steam Reviews MCP Server v${VERSION} running on HTTP port ${port}`);
+    console.error(`MCP endpoint: http://localhost:${port}/mcp`);
+    console.error(`Health check: http://localhost:${port}/health`);
+    console.error(
+      `Cache: ${config.cacheEnabled ? 'enabled' : 'disabled'}, Rate limiting: ${config.rateLimitEnabled ? 'enabled' : 'disabled'}`
+    );
+  });
+}
+
+// Initialize Steam API client (shared between modes)
+const steamClient = new SteamAPIClient(config);
+
+// Determine mode and start server
+const httpMode = process.env.HTTP_MODE === 'true' || process.argv.includes('--http');
+const port = process.env.PORT ? parseInt(process.env.PORT) : config.port;
+
+if (httpMode) {
+  runHttp(port).catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+} else {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}
