@@ -221,7 +221,7 @@ export async function retryWithBackoff<T>(
   }
 
   // This should never be reached, but TypeScript needs it
-  throw lastError;
+  throw lastError ?? new Error('Retry exhausted without error');
 }
 
 /**

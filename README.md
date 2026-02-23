@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
-> **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for Steam game reviews and analysis. Search games, fetch reviews, and analyze sentiment with AI assistants like Claude.**
+> **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for Steam game reviews and analysis. Search games, fetch reviews, and analyze sentiment through the Model Context Protocol.**
 
 ## 🎯 Key Features
 
@@ -47,7 +47,7 @@
 ### Option 1: NPM (Recommended)
 
 ```bash
-npm install -g steam-reviews-mcp
+npm install -g @jhomen368/steam-reviews-mcp
 ```
 
 **Configure with Claude Desktop:**
@@ -61,7 +61,7 @@ Add to your configuration file:
   "mcpServers": {
     "steam-reviews": {
       "command": "npx",
-      "args": ["-y", "steam-reviews-mcp"]
+      "args": ["-y", "@jhomen368/steam-reviews-mcp"]
     }
   }
 }
@@ -73,7 +73,7 @@ Add to your configuration file:
 docker run -d \
   --name steam-reviews-mcp \
   -p 8086:8086 \
-  steam-reviews-mcp:latest
+  ghcr.io/jhomen368/steam-reviews-mcp:latest
 ```
 
 **Docker Compose:**
@@ -81,7 +81,7 @@ docker run -d \
 ```yaml
 services:
   steam-reviews-mcp:
-    image: steam-reviews-mcp:latest
+    image: ghcr.io/jhomen368/steam-reviews-mcp:latest
     container_name: steam-reviews-mcp
     ports:
       - "8086:8086"
