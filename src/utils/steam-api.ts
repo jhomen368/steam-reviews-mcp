@@ -331,6 +331,10 @@ export class SteamAPIClient {
    * Uses Steam's appdetails API to fetch comprehensive game information.
    * Each game is cached individually for efficient subsequent lookups.
    *
+   * NOTE: Steam disabled multiple AppIDs in a single request in November 2014.
+   * This method now makes individual requests for each AppID to work around
+   * this limitation.
+   *
    * @param appIds - Single AppID or array of AppIDs to fetch
    * @returns Promise resolving to an array of SteamGame objects
    *
@@ -368,31 +372,43 @@ export class SteamAPIClient {
       return results;
     }
 
-    // Build API URL with comma-separated AppIDs
-    const appIdsParam = uncachedAppIds.join(',');
-    const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${appIdsParam}&cc=us&l=english`;
+    // Steam disabled multiple AppIDs in a single request (November 2014).
+    // We must make individual requests for each AppID.
+    // Make requests in parallel for efficiency
+    const fetchPromises = uncachedAppIds.map(async (appId) => {
+      try {
+        const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&l=english`;
+        const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
 
-    // Fetch data from Steam API
-    const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
+        const appIdStr = appId.toString();
+        const gameData = response[appIdStr];
 
-    // Process each game's response
-    for (const appId of uncachedAppIds) {
-      const appIdStr = appId.toString();
-      const gameData = response[appIdStr];
+        if (gameData && gameData.success && gameData.data) {
+          const steamGame = this.normalizeAppDetails(gameData.data);
 
-      if (gameData && gameData.success && gameData.data) {
-        const steamGame = this.normalizeAppDetails(gameData.data);
+          // Cache the normalized game data
+          const cacheKey = `game_${appId}`;
+          if (this.config.cacheEnabled) {
+            this.cache.set(cacheKey, steamGame, this.config.cacheTTL.gameInfo);
+          }
 
-        // Cache the normalized game data
-        const cacheKey = `game_${appId}`;
-        if (this.config.cacheEnabled) {
-          this.cache.set(cacheKey, steamGame, this.config.cacheTTL.gameInfo);
+          return steamGame;
         }
-
-        results.push(steamGame);
+        return null;
+      } catch (error) {
+        // Log error but don't throw - just skip this game
+        console.error(`Failed to fetch game ${appId}:`, error);
+        return null;
       }
-      // If success is false, we simply don't add this game to results
-      // This handles cases where the AppID doesn't exist or is not a game
+    });
+
+    const fetchedGames = await Promise.all(fetchPromises);
+
+    // Add successfully fetched games to results
+    for (const game of fetchedGames) {
+      if (game !== null) {
+        results.push(game);
+      }
     }
 
     return results;
@@ -445,15 +461,71 @@ export class SteamAPIClient {
       };
     }
 
-    // DLC list
-    if (data.dlc && Array.isArray(data.dlc)) {
+    // DLC list - store AppIDs only, names will be fetched separately if needed
+    if (data.dlc && Array.isArray(data.dlc) && data.dlc.length > 0) {
       game.dlc = data.dlc.slice(0, 10).map((dlcId: number) => ({
         appId: dlcId,
-        name: `DLC ${dlcId}`, // Note: Names require separate API calls
+        name: '', // Will be populated by fetchDlcNames if includeDlc is true
       }));
     }
 
     return game;
+  }
+
+  /**
+   * Fetch names for DLC AppIDs.
+   *
+   * Since Steam's appdetails API only returns DLC AppIDs (not names),
+   * we need to make separate API calls to get the DLC names.
+   *
+   * @param dlcAppIds - Array of DLC AppIDs to fetch names for
+   * @returns Promise resolving to a map of AppID to name
+   *
+   * @example
+   * ```typescript
+   * const dlcNames = await client.fetchDlcNames([2378500, 2956320]);
+   * // Returns: Map { 2378500 => "Baldur's Gate 3 - Digital Deluxe Edition Upgrade", ... }
+   * ```
+   */
+  async fetchDlcNames(dlcAppIds: number[]): Promise<Map<number, string>> {
+    const dlcNames = new Map<number, string>();
+
+    // Fetch DLC details in parallel
+    const fetchPromises = dlcAppIds.map(async (dlcId) => {
+      try {
+        const cacheKey = `dlc_${dlcId}`;
+
+        // Check cache first
+        if (this.config.cacheEnabled) {
+          const cached = this.cache.get(cacheKey) as string | undefined;
+          if (cached !== undefined) {
+            dlcNames.set(dlcId, cached);
+            return;
+          }
+        }
+
+        const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${dlcId}&cc=us&l=english`;
+        const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
+
+        const dlcData = response[dlcId.toString()];
+        if (dlcData && dlcData.success && dlcData.data) {
+          const name = dlcData.data.name;
+          dlcNames.set(dlcId, name);
+
+          // Cache the DLC name
+          if (this.config.cacheEnabled) {
+            this.cache.set(cacheKey, name, this.config.cacheTTL.gameInfo);
+          }
+        }
+      } catch (error) {
+        // If we can't fetch DLC name, we'll use a placeholder
+        console.error(`Failed to fetch DLC ${dlcId}:`, error);
+        dlcNames.set(dlcId, `DLC ${dlcId}`);
+      }
+    });
+
+    await Promise.all(fetchPromises);
+    return dlcNames;
   }
 
   /**

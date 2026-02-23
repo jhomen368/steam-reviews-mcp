@@ -550,6 +550,38 @@ async function main() {
           };
         });
 
+        // Fetch DLC names if requested
+        if (validatedInput.includeDlc) {
+          // Collect all DLC AppIDs from all games
+          const allDlcAppIds: number[] = [];
+          for (const game of gamesWithStats) {
+            if (game.dlc && game.dlc.length > 0) {
+              for (const dlc of game.dlc) {
+                if (dlc.appId) {
+                  allDlcAppIds.push(dlc.appId);
+                }
+              }
+            }
+          }
+
+          // Fetch DLC names in parallel
+          if (allDlcAppIds.length > 0) {
+            const dlcNames = await steamClient.fetchDlcNames(allDlcAppIds);
+
+            // Update DLC names in games
+            for (const game of gamesWithStats) {
+              if (game.dlc && game.dlc.length > 0) {
+                for (const dlc of game.dlc) {
+                  const name = dlcNames.get(dlc.appId);
+                  if (name) {
+                    dlc.name = name;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Strip out optional fields if not requested
         const processedGames = gamesWithStats.map((game) => {
           const processed = { ...game };
@@ -860,6 +892,38 @@ async function runHttp(port: number) {
             ...game,
             reviewStats: includeStats ? reviewSummaries.get(game.appId) : undefined,
           }));
+
+          // Fetch DLC names if requested
+          if (validatedInput.includeDlc) {
+            // Collect all DLC AppIDs from all games
+            const allDlcAppIds: number[] = [];
+            for (const game of gamesWithStats) {
+              if (game.dlc && game.dlc.length > 0) {
+                for (const dlc of game.dlc) {
+                  if (dlc.appId) {
+                    allDlcAppIds.push(dlc.appId);
+                  }
+                }
+              }
+            }
+
+            // Fetch DLC names in parallel
+            if (allDlcAppIds.length > 0) {
+              const dlcNames = await steamClient.fetchDlcNames(allDlcAppIds);
+
+              // Update DLC names in games
+              for (const game of gamesWithStats) {
+                if (game.dlc && game.dlc.length > 0) {
+                  for (const dlc of game.dlc) {
+                    const name = dlcNames.get(dlc.appId);
+                    if (name) {
+                      dlc.name = name;
+                    }
+                  }
+                }
+              }
+            }
+          }
 
           const processedGames = gamesWithStats.map((game) => {
             const processed = { ...game };
