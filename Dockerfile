@@ -24,7 +24,9 @@ FROM node:25-alpine
 WORKDIR /app
 
 # Install dumb-init for proper signal handling and security
-RUN apk add --no-cache dumb-init
+# Upgrade all packages to fix CVEs in base image (e.g., CVE-2026-22184 in zlib)
+RUN apk add --no-cache dumb-init && \
+    apk upgrade --no-cache
 
 # Copy package files
 COPY package*.json ./

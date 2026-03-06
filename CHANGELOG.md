@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Corrected Steam review URL generation in `generateReviewUrl()` in `src/utils/analysis.ts` - fixed URL format from incorrect `profiles/recommended/[appid]/[recommendationid]` to correct `profiles/[steamid64]/recommended/[appid]/`
 
+### Security
+
+- Upgraded Alpine base image packages to remediate CVE-2026-22184 (CRITICAL): buffer overflow in zlib 1.3.1-r2; patched to 1.3.2-r0 via apk upgrade in Dockerfile
+
 ## [1.0.0] - 2026-02-23
 
 ### Added
