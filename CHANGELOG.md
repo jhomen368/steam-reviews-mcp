@@ -5,6 +5,12 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-06
+
+### Fixed
+
+- Corrected Steam review URL generation in `generateReviewUrl()` in `src/utils/analysis.ts` - fixed URL format from incorrect `profiles/recommended/[appid]/[recommendationid]` to correct `profiles/[steamid64]/recommended/[appid]/`
+
 ## [1.0.0] - 2026-02-23
 
 ### Added

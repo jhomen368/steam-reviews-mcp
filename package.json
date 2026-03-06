@@ -1,6 +1,6 @@
 {
   "name": "@jhomen368/steam-reviews-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP server for querying and analyzing Steam game reviews",
   "type": "module",
   "author": "jhomen368",

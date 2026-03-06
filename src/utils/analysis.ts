@@ -26,12 +26,12 @@ const MAX_EXAMPLE_QUOTES = 5;
 /**
  * Generate a Steam community URL for a specific review
  *
+ * @param steamId - Author's SteamID64
  * @param appId - Steam AppID of the game
- * @param recommendationId - The review's unique recommendation ID
  * @returns Full Steam community URL to the review
  */
-export function generateReviewUrl(appId: number, recommendationId: string): string {
-  return `https://steamcommunity.com/profiles/recommended/${appId}/${recommendationId}`;
+export function generateReviewUrl(steamId: string, appId: number): string {
+  return `https://steamcommunity.com/profiles/${steamId}/recommended/${appId}/`;
 }
 
 /**
@@ -91,7 +91,7 @@ export function selectExampleQuotes(
     const review = sortedPositive[i];
     quotes.push({
       excerpt: truncateText(review.review.trim()),
-      url: generateReviewUrl(appId, review.recommendationId),
+      url: generateReviewUrl(review.author.steamId, appId),
       isPositive: true,
       votesHelpful: review.votesHelpful,
       playtimeHours: Math.round(review.author.playtimeAtReview / 60),
@@ -104,7 +104,7 @@ export function selectExampleQuotes(
     const review = sortedNegative[i];
     quotes.push({
       excerpt: truncateText(review.review.trim()),
-      url: generateReviewUrl(appId, review.recommendationId),
+      url: generateReviewUrl(review.author.steamId, appId),
       isPositive: false,
       votesHelpful: review.votesHelpful,
       playtimeHours: Math.round(review.author.playtimeAtReview / 60),
