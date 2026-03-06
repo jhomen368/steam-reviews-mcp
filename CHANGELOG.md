@@ -95,5 +95,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Uses natural for NLP/sentiment analysis
 - Node.js 18+ required
 - ES modules (ESM) architecture
-
-[1.0.0]: https://github.com/jhomen368/steam-reviews-mcp/releases/tag/v1.0.0
