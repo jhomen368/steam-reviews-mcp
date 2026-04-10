@@ -14,6 +14,8 @@ coverage/
 .idea/
 *.swp
 *.swo
+opencode.json
+.opencode/
 # Ignore markdown files except documentation
 *.md
 !README.md
