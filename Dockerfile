@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
+# Install all dependencies (dev + prod)
 RUN npm ci
 
 # Copy source code
@@ -17,7 +17,10 @@ COPY src ./src
 # Build TypeScript
 RUN npm run build
 
-# Production stage
+# Prune to production-only dependencies
+RUN npm ci --omit=dev
+
+# Production stage — pure Node.js runtime, no npm
 FROM node:26-alpine
 
 # Set working directory
@@ -28,14 +31,13 @@ WORKDIR /app
 RUN apk add --no-cache dumb-init && \
     apk upgrade --no-cache
 
-# Copy package files
-COPY package*.json ./
+# Remove npm to eliminate its bundled dependency CVE surface (not needed at runtime)
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx
 
-# Install production dependencies only
-RUN npm ci --omit=dev && \
-    npm cache clean --force
-
-# Copy built files from builder
+# Copy production node_modules and built output from builder
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/build ./build
 
 # Create a non-root user
