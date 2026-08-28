@@ -5,6 +5,24 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-08-28
+
+### Changed
+
+- **Tool execution**: Consolidated tool definitions, validation, execution, and error mapping into one module shared by the stdio and HTTP transports
+- **Automated tests**: Added Node test coverage for all four tools and their validation and failure paths
+- **Maintenance**: Updated runtime dependencies, development tooling, container images, and GitHub Actions
+
+### Fixed
+
+- **Build compatibility**: Aligned TypeScript and ESLint tooling and migrated TypeScript to Node16 module resolution
+- **CI reliability**: Synchronized the npm lockfile before clean installs and removed unnecessary CodeQL build steps
+
+### Security
+
+- **Production image**: Removed npm from the runtime Docker image to reduce its installed package and CVE footprint
+- **Dependencies**: Updated vulnerable transitive packages reported by npm audit; the release lockfile reports zero known vulnerabilities
+
 ## [1.0.1] - 2026-03-06
 
 ### Fixed

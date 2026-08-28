@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/steam-reviews-mcp/pkgs/container/steam-reviews-mcp)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
+[![Version](https://img.shields.io/badge/version-1.0.2-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
 > **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for Steam game reviews and analysis. Search games, fetch reviews, and analyze sentiment through the Model Context Protocol.**
