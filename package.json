@@ -63,6 +63,7 @@
     "prepublishOnly": "npm run build",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node build/index.js",
+    "test": "npm run build && node --test test/*.test.js",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
