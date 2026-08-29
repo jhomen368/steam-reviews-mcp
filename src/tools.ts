@@ -25,24 +25,35 @@ interface SteamSource {
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
 }
 
+const searchTermSchema = z.string().trim().min(1);
+
 const searchGamesSchema = z
   .object({
-    query: z.string().optional(),
-    queries: z.array(z.string()).min(1).max(5).optional(),
+    query: searchTermSchema.optional(),
+    queries: z.array(searchTermSchema).max(5).optional(),
     limit: z.number().min(1).max(25).optional(),
   })
-  .refine((data) => data.query || data.queries, {
+  .refine((data) => data.query || data.queries?.length, {
     message: 'Either query or queries must be provided',
   });
 
-const gameInfoCriteriaSchema = z.object({
-  minReviewScore: z.number().min(0).max(100).optional(),
-  minReviews: z.number().min(0).optional(),
-  maxPrice: z.number().min(0).optional(),
-  requireFree: z.boolean().optional(),
-  requireMetacritic: z.boolean().optional(),
-  minMetacritic: z.number().min(0).max(100).optional(),
-});
+const gameInfoCriteriaSchema = z
+  .object({
+    minReviewScore: z.number().min(0).max(100).optional(),
+    minReviews: z.number().min(0).optional(),
+    maxPrice: z.number().min(0).optional(),
+    requireFree: z.boolean().optional(),
+    requireMetacritic: z.boolean().optional(),
+    minMetacritic: z.number().min(0).max(100).optional(),
+  })
+  .transform((criteria): GameInfoCriteria => ({
+    minReviewScore: criteria.minReviewScore || undefined,
+    minReviews: criteria.minReviews || undefined,
+    maxPrice: criteria.maxPrice || undefined,
+    requireFree: criteria.requireFree || undefined,
+    requireMetacritic: criteria.requireMetacritic || undefined,
+    minMetacritic: criteria.minMetacritic || undefined,
+  }));
 
 const getGameInfoSchema = z.object({
   appIds: z.array(z.number()).min(1).max(10),
@@ -53,6 +64,12 @@ const getGameInfoSchema = z.object({
   includeDlc: z.boolean().optional(),
 });
 
+const dayRangeSchema = z
+  .number()
+  .min(0)
+  .transform((value) => value || undefined)
+  .optional();
+
 const fetchReviewsSchema = z.object({
   appId: z.number(),
   filter: z.enum(['all', 'recent', 'updated']).optional(),
@@ -61,7 +78,7 @@ const fetchReviewsSchema = z.object({
   purchaseType: z.enum(['all', 'steam', 'non_steam_purchase']).optional(),
   limit: z.number().min(1).max(100).optional(),
   cursor: z.string().optional(),
-  dayRange: z.number().min(1).optional(),
+  dayRange: dayRangeSchema,
   filterOfftopicActivity: z.boolean().optional(),
   steamDeckOnly: z.boolean().optional(),
 });
@@ -72,7 +89,7 @@ const analyzeReviewsSchema = z.object({
   language: z.string().optional(),
   reviewType: z.enum(['all', 'positive', 'negative']).optional(),
   topic: z.string().optional(),
-  dayRange: z.number().min(1).optional(),
+  dayRange: dayRangeSchema,
   filterOfftopicActivity: z.boolean().optional(),
   steamDeckOnly: z.boolean().optional(),
   preFetchedReviews: z.array(z.any()).optional(),
@@ -156,19 +173,21 @@ export const tools: Tool[] = [
   {
     name: 'search_steam_games',
     description:
-      'Search for Steam games by name or keywords. Supports single or batch queries. Returns basic game information including AppID, name, price, and preview image.',
+      'Search for Steam games by name or keywords. Provide query for a single search or a non-empty queries array for batch searches. Returns basic game information including AppID, name, price, and preview image.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Single search query (game name or keywords)',
+          description: 'Non-blank single search query (game name or keywords)',
+          minLength: 1,
+          pattern: '\\S',
         },
         queries: {
           type: 'array',
-          items: { type: 'string' },
-          description: 'Multiple search queries for batch searching',
-          minItems: 1,
+          items: { type: 'string', minLength: 1, pattern: '\\S' },
+          description:
+            'Multiple search queries for batch searching. May be empty when query is provided.',
           maxItems: 5,
         },
         limit: {
@@ -178,7 +197,13 @@ export const tools: Tool[] = [
           maximum: 25,
         },
       },
-      // Either query or queries must be provided; runtime validation enforces this rule.
+      anyOf: [
+        { required: ['query'] },
+        {
+          required: ['queries'],
+          properties: { queries: { minItems: 1 } },
+        },
+      ],
     },
   },
   {
@@ -206,7 +231,7 @@ export const tools: Tool[] = [
         criteria: {
           type: 'object',
           description:
-            'Optional filter criteria - only games matching ALL criteria will be returned',
+            'Optional filter criteria. Omit when no filtering is needed; zero and false values do not filter results.',
           properties: {
             minReviewScore: {
               type: 'number',
@@ -221,7 +246,8 @@ export const tools: Tool[] = [
             },
             maxPrice: {
               type: 'number',
-              description: 'Maximum price in cents (e.g., 1999 for $19.99)',
+              description:
+                'Maximum price in cents (e.g., 1999 for $19.99). Use 0 or omit for no maximum.',
               minimum: 0,
             },
             requireFree: {
@@ -290,12 +316,14 @@ export const tools: Tool[] = [
         },
         cursor: {
           type: 'string',
-          description: 'Pagination cursor from previous response',
+          description:
+            'Pagination cursor from previous response. Omit or use an empty string for the first page.',
         },
         dayRange: {
           type: 'number',
-          description: 'Only include reviews from last N days (e.g., 30, 90, 365)',
-          minimum: 1,
+          description:
+            'Only include reviews from the last N days (e.g., 30, 90, 365). Omit or use 0 for all time.',
+          minimum: 0,
         },
         filterOfftopicActivity: {
           type: 'boolean',
@@ -343,8 +371,9 @@ export const tools: Tool[] = [
         },
         dayRange: {
           type: 'number',
-          description: 'Only analyze reviews from last N days (e.g., 30, 90, 365)',
-          minimum: 1,
+          description:
+            'Only analyze reviews from the last N days (e.g., 30, 90, 365). Omit or use 0 for all time.',
+          minimum: 0,
         },
         filterOfftopicActivity: {
           type: 'boolean',
@@ -362,7 +391,7 @@ export const tools: Tool[] = [
             description: 'Review object from fetch_reviews tool',
           },
           description:
-            'Optional: Pre-fetched reviews to analyze instead of fetching new ones. Useful to avoid duplicate API calls. If provided, sampleSize, language, reviewType, dayRange, and filtering parameters are ignored.',
+            'Optional: Non-empty array of pre-fetched reviews to analyze instead of fetching new ones. Useful to avoid duplicate API calls. When non-empty, sampleSize, language, reviewType, dayRange, and filtering parameters are ignored.',
         },
       },
       required: ['appId'],
@@ -377,7 +406,7 @@ export function createToolModule(steamClient: SteamSource) {
     const validatedInput = searchGamesSchema.parse(args);
     let results: SteamGame[];
 
-    if (validatedInput.queries) {
+    if (validatedInput.queries?.length) {
       const allResults = await Promise.all(
         validatedInput.queries.map((query) => steamClient.searchGames(query, validatedInput.limit))
       );
@@ -400,7 +429,9 @@ export function createToolModule(steamClient: SteamSource) {
   async function executeGetGameInfo(args: unknown) {
     const validatedInput = getGameInfoSchema.parse(args);
     const games = await steamClient.getAppDetails(validatedInput.appIds);
-    const hasCriteria = validatedInput.criteria !== undefined;
+    const hasCriteria = Object.values(validatedInput.criteria ?? {}).some(
+      (value) => value !== undefined
+    );
     const includeStats = validatedInput.includeStats !== false || hasCriteria;
     const reviewSummaries = new Map<number, ReviewStats | null>();
 
@@ -477,7 +508,7 @@ export function createToolModule(steamClient: SteamSource) {
     });
 
     let filteredGames = processedGames;
-    if (validatedInput.criteria) {
+    if (hasCriteria && validatedInput.criteria) {
       filteredGames = processedGames.filter((game) =>
         meetsGameCriteria(game, validatedInput.criteria!)
       );
