@@ -5,6 +5,18 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-08-29
+
+### Fixed
+
+- **Generated client compatibility**: Accepted empty batch queries alongside a valid single query, treated zero-valued criteria as inactive, and interpreted `dayRange: 0` as an all-time review query
+- **Search validation**: Rejected blank search terms and published the single-or-batch query requirement in the tool schema
+
+### Changed
+
+- **Tool documentation**: Clarified empty, zero, cursor, and pre-fetched review semantics for MCP clients
+- **Regression coverage**: Added tests for generated-client payloads and all active game information criteria
+
 ## [1.0.2] - 2026-08-28
 
 ### Changed
