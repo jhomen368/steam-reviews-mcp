@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://github.com/jhomen368/steam-reviews-mcp/pkgs/container/steam-reviews-mcp)
-[![Version](https://img.shields.io/badge/version-1.0.2-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
+[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp)
 [![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
 > **A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for Steam game reviews and analysis. Search games, fetch reviews, and analyze sentiment through the Model Context Protocol.**
@@ -125,6 +125,9 @@ search_steam_games({
 })
 ```
 
+Search terms must not be blank. If a generated client sends `queries: []` alongside a valid
+`query`, the empty batch field is ignored.
+
 ### Get Game Info with Criteria
 
 ```typescript
@@ -139,6 +142,9 @@ get_game_info({
   includeDlc: true
 })
 ```
+
+Omit `criteria` when no filtering is needed. Zero and `false` criteria values are inactive;
+use `requireFree: true` to return only free games.
 
 ### Fetch Reviews with Filters
 
@@ -155,6 +161,12 @@ fetch_reviews({
 fetch_reviews({
   appId: 1086940,
   filterOfftopicActivity: true
+})
+
+// All-time reviews (`dayRange` may also be omitted)
+fetch_reviews({
+  appId: 1086940,
+  dayRange: 0
 })
 ```
 
