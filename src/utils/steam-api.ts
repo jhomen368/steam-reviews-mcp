@@ -23,6 +23,10 @@ import type {
   PaginatedReviewsResponse,
   Review,
   SteamReviewsResponse,
+  AppAnnouncementsResponse,
+  FetchAppAnnouncementsInput,
+  SteamAppAnnouncement,
+  SteamAppNewsResponse,
 } from '../types.js';
 
 /**
@@ -648,6 +652,101 @@ export class SteamAPIClient {
     }
 
     return reviewStats;
+  }
+
+  /** Retrieve official Steam Community announcements for one app. */
+  async getAppAnnouncements(
+    appId: number,
+    options: Pick<FetchAppAnnouncementsInput, 'limit' | 'before'> = {}
+  ): Promise<AppAnnouncementsResponse> {
+    const limit = options.limit ?? 20;
+    const params = new URLSearchParams({
+      appid: String(appId),
+      count: String(limit),
+      maxlength: '0',
+      feeds: 'steam_community_announcements',
+    });
+    if (options.before !== undefined) {
+      // Steam's enddate boundary is inclusive, while the public option is strictly "before".
+      params.set('enddate', String(options.before - 1));
+    }
+    params.set('format', 'json');
+
+    const cacheKey = `app_announcements_${appId}_${limit}_${options.before ?? 'latest'}`;
+    const apiUrl = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?${params.toString()}`;
+    const response = await this.get<SteamAppNewsResponse>(
+      apiUrl,
+      cacheKey,
+      this.config.cacheTTL.gameInfo
+    );
+    const appNews = response?.appnews;
+
+    if (!appNews || appNews.appid !== appId || !Array.isArray(appNews.newsitems)) {
+      throw new Error(`Malformed Steam app announcement response for AppID ${appId}`);
+    }
+
+    const announcements: SteamAppAnnouncement[] = [];
+    for (const rawItem of appNews.newsitems) {
+      if (!rawItem || typeof rawItem !== 'object') continue;
+      const item = rawItem as Record<string, unknown>;
+
+      if (item.feedname !== 'steam_community_announcements' || item.appid !== appId) {
+        continue;
+      }
+
+      if (
+        typeof item.gid !== 'string' ||
+        item.gid.length === 0 ||
+        typeof item.title !== 'string' ||
+        typeof item.url !== 'string' ||
+        item.url.length === 0 ||
+        typeof item.author !== 'string' ||
+        typeof item.date !== 'number' ||
+        !Number.isInteger(item.date) ||
+        item.date < 0
+      ) {
+        throw new Error(`Malformed Steam app announcement metadata for AppID ${appId}`);
+      }
+
+      const body = typeof item.contents === 'string' ? item.contents : null;
+      const bodyStatus =
+        body === null
+          ? 'malformed'
+          : /(?:\.{3}|…)\s*$/.test(body)
+            ? 'possibly_truncated'
+            : 'full_requested';
+      const tags = Array.isArray(item.tags)
+        ? item.tags.filter((tag): tag is string => typeof tag === 'string')
+        : undefined;
+
+      announcements.push({
+        id: item.gid,
+        appId,
+        source: 'official_app_announcement',
+        title: item.title,
+        authorLabel: item.author,
+        publishedAt: item.date,
+        steamUrl: item.url,
+        body,
+        bodyFormat: 'steam_markup',
+        bodyStatus,
+        containsSteamImagePlaceholders: body?.includes('{STEAM_CLAN_IMAGE}') ?? false,
+        ...(tags && tags.length > 0 ? { tags } : {}),
+      });
+    }
+
+    const nextCursor = announcements.reduce<number | null>(
+      (oldest, announcement) =>
+        oldest === null || announcement.publishedAt < oldest ? announcement.publishedAt : oldest,
+      null
+    );
+
+    return {
+      appId,
+      source: 'official_app_announcements',
+      announcements,
+      nextCursor,
+    };
   }
 
   /**

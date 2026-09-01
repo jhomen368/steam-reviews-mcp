@@ -1,0 +1,18 @@
+{
+  "appnews": {
+    "appid": 620,
+    "newsitems": [
+      {
+        "gid": "1006",
+        "title": "Update with unavailable body",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1006",
+        "author": "Portal Team",
+        "contents": { "unexpected": "shape" },
+        "date": 1680000000,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      }
+    ],
+    "count": 1
+  }
+}

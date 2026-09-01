@@ -1,0 +1,22 @@
+{
+  "appnews": {
+    "appid": 620,
+    "newsitems": [
+      {
+        "gid": "1001",
+        "title": "Portal 2 update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1001",
+        "is_external_url": true,
+        "author": "Kerry",
+        "contents": "[h2]Patch notes[/h2]<br>Fixed co-op. [img]{STEAM_CLAN_IMAGE}/images/fix.png[/img]",
+        "feedlabel": "Community Announcements",
+        "date": 1710000100,
+        "feedname": "steam_community_announcements",
+        "feed_type": 1,
+        "appid": 620,
+        "tags": ["patchnotes"]
+      }
+    ],
+    "count": 1
+  }
+}

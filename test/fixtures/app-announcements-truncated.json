@@ -1,0 +1,18 @@
+{
+  "appnews": {
+    "appid": 620,
+    "newsitems": [
+      {
+        "gid": "1002",
+        "title": "A longer update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1002",
+        "author": "Portal Team",
+        "contents": "This generated blurb stops before the full announcement...",
+        "date": 1710000000,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      }
+    ],
+    "count": 1
+  }
+}

@@ -44,6 +44,10 @@
         {
           "name": "analyze_reviews",
           "description": "Analyze Steam game reviews for sentiment, themes, and insights"
+        },
+        {
+          "name": "fetch_app_announcements",
+          "description": "Fetch official Steam Community announcements, patch notes, and hotfixes"
         }
       ]
     }

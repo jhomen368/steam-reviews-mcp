@@ -170,6 +170,44 @@ export interface FetchReviewsInput {
   cursor?: string; // For pagination
 }
 
+/** Input parameters for fetching official Steam app announcements. */
+export interface FetchAppAnnouncementsInput {
+  appId: number;
+  limit?: number;
+  /** Unix timestamp used to request announcements published before this time. */
+  before?: number;
+}
+
+export type AnnouncementBodyStatus = 'full_requested' | 'possibly_truncated' | 'malformed';
+
+/** A Steam Community announcement returned by an app's official announcement feed. */
+export interface SteamAppAnnouncement {
+  id: string;
+  appId: number;
+  source: 'official_app_announcement';
+  title: string;
+  /** Steam's displayed author label; no employer or publisher role is implied. */
+  authorLabel: string;
+  publishedAt: number;
+  steamUrl: string;
+  /** Raw Steam markup, or null when Steam returned a malformed body. */
+  body: string | null;
+  bodyFormat: 'steam_markup';
+  /** `full_requested` records the API request, not independent proof of completeness. */
+  bodyStatus: AnnouncementBodyStatus;
+  containsSteamImagePlaceholders: boolean;
+  tags?: string[];
+}
+
+/** Paginated official announcement feed for one Steam app. */
+export interface AppAnnouncementsResponse {
+  appId: number;
+  source: 'official_app_announcements';
+  announcements: SteamAppAnnouncement[];
+  /** Oldest publication timestamp in this page, suitable for the next `before` value. */
+  nextCursor: number | null;
+}
+
 /**
  * Input parameters for analyze_reviews tool
  */
@@ -302,6 +340,14 @@ export interface SteamReviewsResponse {
     written_during_early_access: boolean;
   }>;
   cursor?: string;
+}
+
+/** Raw response shape from ISteamNews/GetNewsForApp. */
+export interface SteamAppNewsResponse {
+  appnews?: {
+    appid?: unknown;
+    newsitems?: unknown;
+  };
 }
 
 /**

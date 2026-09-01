@@ -15,6 +15,7 @@
 - **🧠 Sentiment Analysis** - NLP-powered analysis with topic drill-down
 - **⚡ Smart Caching** - 70-85% API call reduction with variable TTL
 - **🔗 Example Quotes** - Clickable Steam community links for review quotes
+- **📣 App Announcements** - Official Steam Community posts, patch notes, and hotfixes
 
 ## 🔒 Security
 
@@ -35,6 +36,7 @@
 | **get_game_info** | Get game details | Batch lookup, criteria filtering, system requirements, DLC |
 | **fetch_reviews** | Fetch user reviews | Advanced filters, pagination, time-bounded queries |
 | **analyze_reviews** | Analyze sentiment | NLP analysis, topic drill-down, example quotes with links |
+| **fetch_app_announcements** | Read official app announcements | Full available Steam markup, publication details, backward pagination |
 
 ## 📋 Prerequisites
 
@@ -186,6 +188,29 @@ analyze_reviews({
 })
 ```
 
+### Fetch Official App Announcements
+
+```typescript
+// Latest announcements
+fetch_app_announcements({
+  appId: 1086940,
+  limit: 10
+})
+
+// Older announcements using the previous result's nextCursor
+fetch_app_announcements({
+  appId: 1086940,
+  limit: 10,
+  before: 1710000000
+})
+```
+
+Announcement bodies retain Steam's BBCode, HTML, and image placeholders. Check `bodyStatus`
+before treating the text as full: it can be `full_requested`, `possibly_truncated`, or
+`malformed`. `full_requested` means the client asked Steam not to shorten the body; it is not
+independent proof that the source text is complete.
+`authorLabel` is the label displayed by Steam and does not verify an employer or publisher role.
+
 ### Natural Language Examples
 
 Simply ask your AI assistant:
@@ -195,6 +220,7 @@ Simply ask your AI assistant:
 - "What are people saying about Cyberpunk 2077 recently?"
 - "Analyze negative reviews for No Man's Sky - what are the main complaints?"
 - "Find free games with at least 90% positive reviews"
+- "Show me the latest official updates for Baldur's Gate 3"
 
 ## ⚙️ Configuration
 
