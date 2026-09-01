@@ -24,12 +24,18 @@ const review = {
   writtenDuringEarlyAccess: false,
 };
 
-test('lists the four Steam review tools', () => {
+test('lists the Steam research tools', () => {
   const toolModule = createToolModule({});
 
   assert.deepEqual(
     toolModule.tools.map((tool) => tool.name),
-    ['search_steam_games', 'get_game_info', 'fetch_reviews', 'analyze_reviews']
+    [
+      'search_steam_games',
+      'get_game_info',
+      'fetch_reviews',
+      'analyze_reviews',
+      'fetch_app_announcements',
+    ]
   );
 });
 
@@ -224,6 +230,84 @@ test('fetches reviews with the requested filters', async () => {
     cursor: '620:english:25',
     totalReviews: 0,
   });
+});
+
+test('fetches official app announcements with backward pagination', async () => {
+  let received;
+  const toolModule = createToolModule({
+    async getAppAnnouncements(appId, options) {
+      received = { appId, options };
+      return {
+        appId,
+        source: 'official_app_announcements',
+        announcements: [],
+        nextCursor: null,
+      };
+    },
+  });
+
+  const result = await toolModule.execute('fetch_app_announcements', {
+    appId: 620,
+    limit: 5,
+    cursor: 'opaque-cursor',
+  });
+
+  assert.deepEqual(received, {
+    appId: 620,
+    options: { limit: 5, cursor: 'opaque-cursor' },
+  });
+  assert.deepEqual(JSON.parse(result.content[0].text), {
+    appId: 620,
+    source: 'official_app_announcements',
+    announcements: [],
+    nextCursor: null,
+  });
+});
+
+test('keeps an empty announcement feed distinct from a Steam failure', async () => {
+  const emptyModule = createToolModule({
+    async getAppAnnouncements(appId) {
+      return {
+        appId,
+        source: 'official_app_announcements',
+        announcements: [],
+        nextCursor: null,
+      };
+    },
+  });
+  const failingModule = createToolModule({
+    async getAppAnnouncements() {
+      throw new Error('Steam news unavailable');
+    },
+  });
+
+  const emptyResult = await emptyModule.execute('fetch_app_announcements', { appId: 620 });
+  const failureResult = await failingModule.execute('fetch_app_announcements', { appId: 620 });
+
+  assert.equal(emptyResult.isError, undefined);
+  assert.deepEqual(JSON.parse(emptyResult.content[0].text).announcements, []);
+  assert.equal(failureResult.isError, true);
+  assert.equal(JSON.parse(failureResult.content[0].text).message, 'Steam news unavailable');
+});
+
+test('rejects invalid official announcement inputs before requesting Steam', async () => {
+  let requestCount = 0;
+  const toolModule = createToolModule({
+    async getAppAnnouncements() {
+      requestCount += 1;
+    },
+  });
+
+  for (const input of [
+    { appId: 0 },
+    { appId: 620, limit: 0 },
+    { appId: 620, limit: 101 },
+    { appId: 620, cursor: '' },
+  ]) {
+    const result = await toolModule.execute('fetch_app_announcements', input);
+    assert.equal(result.isError, true);
+  }
+  assert.equal(requestCount, 0);
 });
 
 test('treats dayRange zero as an all-time review query', async () => {

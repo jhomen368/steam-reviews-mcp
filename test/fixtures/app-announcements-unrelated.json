@@ -1,0 +1,36 @@
+{
+  "appnews": {
+    "appid": 620,
+    "newsitems": [
+      {
+        "gid": "1005",
+        "title": "Official update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1005",
+        "author": "Portal Team",
+        "contents": "Official body",
+        "date": 1690000200,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      },
+      {
+        "gid": "external-1",
+        "title": "External article",
+        "author": "A news site",
+        "contents": "External body",
+        "date": 1690000100,
+        "feedname": "store_rss",
+        "appid": 620
+      },
+      {
+        "gid": "other-app",
+        "title": "Another app update",
+        "author": "Another team",
+        "contents": "Another app body",
+        "date": 1690000000,
+        "feedname": "steam_community_announcements",
+        "appid": 730
+      }
+    ],
+    "count": 3
+  }
+}

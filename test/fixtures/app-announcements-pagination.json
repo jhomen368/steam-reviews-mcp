@@ -1,0 +1,38 @@
+{
+  "appnews": {
+    "appid": 620,
+    "newsitems": [
+      {
+        "gid": "1003",
+        "title": "Newer update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1003",
+        "author": "Portal Team",
+        "contents": "Newer update body",
+        "date": 1700000200,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      },
+      {
+        "gid": "1004",
+        "title": "Same-time update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1004",
+        "author": "Portal Team",
+        "contents": "Same-time update body",
+        "date": 1700000200,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      },
+      {
+        "gid": "1007",
+        "title": "Older update",
+        "url": "https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1007",
+        "author": "Portal Team",
+        "contents": "Older update body",
+        "date": 1700000100,
+        "feedname": "steam_community_announcements",
+        "appid": 620
+      }
+    ],
+    "count": 12
+  }
+}

@@ -23,6 +23,10 @@ import type {
   PaginatedReviewsResponse,
   Review,
   SteamReviewsResponse,
+  AppAnnouncementsResponse,
+  FetchAppAnnouncementsInput,
+  SteamAppAnnouncement,
+  SteamAppNewsResponse,
 } from '../types.js';
 
 /**
@@ -648,6 +652,155 @@ export class SteamAPIClient {
     }
 
     return reviewStats;
+  }
+
+  /** Retrieve official Steam Community announcements for one app. */
+  async getAppAnnouncements(
+    appId: number,
+    options: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'> = {}
+  ): Promise<AppAnnouncementsResponse> {
+    const limit = options.limit ?? 20;
+    let boundaryTimestamp: number | undefined;
+    let seenBoundaryIds: string[] = [];
+
+    if (options.cursor !== undefined) {
+      try {
+        if (options.cursor.length > 8192) throw new Error('Cursor is too long');
+        const decodedBytes = Buffer.from(options.cursor, 'base64url');
+        if (decodedBytes.toString('base64url') !== options.cursor) {
+          throw new Error('Cursor encoding is not canonical');
+        }
+        const decoded = JSON.parse(decodedBytes.toString('utf8')) as Record<string, unknown>;
+        if (
+          typeof decoded.before !== 'number' ||
+          !Number.isInteger(decoded.before) ||
+          decoded.before < 0 ||
+          decoded.before > 4294967295 ||
+          !Array.isArray(decoded.seenIds) ||
+          decoded.seenIds.length === 0 ||
+          decoded.seenIds.length > 100 ||
+          !decoded.seenIds.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 64)
+        ) {
+          throw new Error('Cursor has an invalid shape');
+        }
+        boundaryTimestamp = decoded.before;
+        seenBoundaryIds = [...new Set(decoded.seenIds as string[])];
+      } catch {
+        throw new Error('Invalid app announcement cursor');
+      }
+    }
+
+    const params = new URLSearchParams({
+      appid: String(appId),
+      count: String(limit + seenBoundaryIds.length),
+      maxlength: '0',
+      feeds: 'steam_community_announcements',
+    });
+    if (boundaryTimestamp !== undefined) {
+      params.set('enddate', String(boundaryTimestamp));
+    }
+    params.set('format', 'json');
+
+    const cacheKey = `app_announcements_${appId}_${limit}_${options.cursor ?? 'latest'}`;
+    const apiUrl = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?${params.toString()}`;
+    const response = await this.get<SteamAppNewsResponse>(
+      apiUrl,
+      cacheKey,
+      this.config.cacheTTL.gameInfo
+    );
+    const appNews = response?.appnews;
+
+    if (!appNews || appNews.appid !== appId || !Array.isArray(appNews.newsitems)) {
+      throw new Error(`Malformed Steam app announcement response for AppID ${appId}`);
+    }
+
+    const announcements: SteamAppAnnouncement[] = [];
+    const seenBoundaryIdSet = new Set(seenBoundaryIds);
+    for (const rawItem of appNews.newsitems) {
+      if (!rawItem || typeof rawItem !== 'object') continue;
+      const item = rawItem as Record<string, unknown>;
+
+      if (item.feedname !== 'steam_community_announcements' || item.appid !== appId) {
+        continue;
+      }
+
+      if (
+        item.date === boundaryTimestamp &&
+        typeof item.gid === 'string' &&
+        seenBoundaryIdSet.has(item.gid)
+      ) {
+        continue;
+      }
+
+      if (
+        typeof item.gid !== 'string' ||
+        item.gid.length === 0 ||
+        typeof item.title !== 'string' ||
+        typeof item.url !== 'string' ||
+        item.url.length === 0 ||
+        typeof item.author !== 'string' ||
+        typeof item.date !== 'number' ||
+        !Number.isInteger(item.date) ||
+        item.date < 0
+      ) {
+        throw new Error(`Malformed Steam app announcement metadata for AppID ${appId}`);
+      }
+
+      const body = typeof item.contents === 'string' ? item.contents : null;
+      const bodyStatus =
+        body === null
+          ? 'malformed'
+          : /(?:\.{3}|…)\s*$/.test(body)
+            ? 'possibly_truncated'
+            : 'full_requested';
+      const tags = Array.isArray(item.tags)
+        ? item.tags.filter((tag): tag is string => typeof tag === 'string')
+        : undefined;
+
+      announcements.push({
+        id: item.gid,
+        appId,
+        source: 'official_app_announcement',
+        title: item.title,
+        authorLabel: item.author,
+        publishedAt: item.date,
+        steamUrl: item.url,
+        body,
+        bodyFormat: 'steam_markup',
+        bodyStatus,
+        containsSteamImagePlaceholders: body?.includes('{STEAM_CLAN_IMAGE}') ?? false,
+        ...(tags && tags.length > 0 ? { tags } : {}),
+      });
+
+      if (announcements.length === limit) break;
+    }
+
+    const oldestTimestamp = announcements.reduce<number | null>(
+      (oldest, announcement) =>
+        oldest === null || announcement.publishedAt < oldest ? announcement.publishedAt : oldest,
+      null
+    );
+    const nextCursor =
+      oldestTimestamp === null
+        ? null
+        : Buffer.from(
+            JSON.stringify({
+              before: oldestTimestamp,
+              seenIds: [
+                ...(oldestTimestamp === boundaryTimestamp ? seenBoundaryIds : []),
+                ...announcements
+                  .filter((announcement) => announcement.publishedAt === oldestTimestamp)
+                  .map((announcement) => announcement.id),
+              ],
+            })
+          ).toString('base64url');
+
+    return {
+      appId,
+      source: 'official_app_announcements',
+      announcements,
+      nextCursor,
+    };
   }
 
   /**

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { analyzeTopicFocused, summarizeReviews } from './utils/analysis.js';
 import type {
   FetchReviewsInput,
+  FetchAppAnnouncementsInput,
+  AppAnnouncementsResponse,
   GameInfoCriteria,
   PaginatedReviewsResponse,
   Review,
@@ -23,6 +25,10 @@ interface SteamSource {
   getCurrentPlayers(appId: number): Promise<number>;
   fetchDlcNames(dlcAppIds: number[]): Promise<Map<number, string>>;
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
+  getAppAnnouncements(
+    appId: number,
+    options?: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'>
+  ): Promise<AppAnnouncementsResponse>;
 }
 
 const searchTermSchema = z.string().trim().min(1);
@@ -93,6 +99,12 @@ const analyzeReviewsSchema = z.object({
   filterOfftopicActivity: z.boolean().optional(),
   steamDeckOnly: z.boolean().optional(),
   preFetchedReviews: z.array(z.any()).optional(),
+});
+
+const fetchAppAnnouncementsSchema = z.object({
+  appId: z.number().int().positive().max(4294967295),
+  limit: z.number().int().min(1).max(100).optional(),
+  cursor: z.string().min(1).max(8192).optional(),
 });
 
 /** Build the human-readable summary returned with game information. */
@@ -397,6 +409,36 @@ export const tools: Tool[] = [
       required: ['appId'],
     },
   },
+  {
+    name: 'fetch_app_announcements',
+    description:
+      "Fetch official Steam Community announcements for one app, including patch notes and hotfixes. Bodies retain Steam's raw markup and report whether full content was requested, appears truncated, or is malformed. Displayed author labels do not imply a verified employer or publisher role.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: {
+          type: 'integer',
+          description: 'Steam AppID whose official app announcements should be retrieved',
+          minimum: 1,
+          maximum: 4294967295,
+        },
+        limit: {
+          type: 'integer',
+          description: 'Maximum number of announcements to return (default: 20, max: 100)',
+          minimum: 1,
+          maximum: 100,
+        },
+        cursor: {
+          type: 'string',
+          description:
+            'Opaque backward pagination cursor from the previous response. Omit for the latest announcements.',
+          minLength: 1,
+          maxLength: 8192,
+        },
+      },
+      required: ['appId'],
+    },
+  },
 ];
 
 /** Create the transport-neutral Steam review tool module. */
@@ -623,12 +665,31 @@ export function createToolModule(steamClient: SteamSource) {
     };
   }
 
+  /** Execute retrieval of one app's official Steam Community announcements. */
+  async function executeFetchAppAnnouncements(args: unknown) {
+    const validatedInput = fetchAppAnnouncementsSchema.parse(args);
+    const result = await steamClient.getAppAnnouncements(validatedInput.appId, {
+      limit: validatedInput.limit,
+      cursor: validatedInput.cursor,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
+  }
+
   /** Dispatch a validated tool name to its implementation. */
   async function executeTool(name: string, args: unknown) {
     if (name === 'search_steam_games') return executeSearchGames(args);
     if (name === 'get_game_info') return executeGetGameInfo(args);
     if (name === 'fetch_reviews') return executeFetchReviews(args);
     if (name === 'analyze_reviews') return executeAnalyzeReviews(args);
+    if (name === 'fetch_app_announcements') return executeFetchAppAnnouncements(args);
     throw new Error(`Unknown tool: ${name}`);
   }
 
