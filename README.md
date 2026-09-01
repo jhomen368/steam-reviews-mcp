@@ -192,7 +192,7 @@ analyze_reviews({
 
 ```typescript
 // Latest announcements
-fetch_app_announcements({
+const firstPage = await fetch_app_announcements({
   appId: 1086940,
   limit: 10
 })
@@ -201,7 +201,7 @@ fetch_app_announcements({
 fetch_app_announcements({
   appId: 1086940,
   limit: 10,
-  before: 1710000000
+  cursor: firstPage.nextCursor
 })
 ```
 

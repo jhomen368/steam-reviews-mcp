@@ -34,17 +34,19 @@ class FixtureSteamClient extends SteamAPIClient {
 
   async get(url, cacheKey, cacheTTL) {
     this.requests.push({ url, cacheKey, cacheTTL });
-    return this.response;
+    const response = structuredClone(this.response);
+    const count = Number(new URL(url).searchParams.get('count'));
+    if (Array.isArray(response.appnews?.newsitems)) {
+      response.appnews.newsitems = response.appnews.newsitems.slice(0, count);
+    }
+    return response;
   }
 }
 
 test('retrieves full official app announcements through the shared request path', async () => {
   const client = new FixtureSteamClient(await loadFixture('app-announcements-complete'));
 
-  const result = await client.getAppAnnouncements(620, {
-    limit: 1,
-    before: 1710000200,
-  });
+  const result = await client.getAppAnnouncements(620, { limit: 1 });
 
   const request = client.requests[0];
   const url = new URL(request.url);
@@ -54,12 +56,12 @@ test('retrieves full official app announcements through the shared request path'
     count: '1',
     maxlength: '0',
     feeds: 'steam_community_announcements',
-    enddate: '1710000199',
     format: 'json',
   });
-  assert.equal(request.cacheKey, 'app_announcements_620_1_1710000200');
+  assert.equal(request.cacheKey, 'app_announcements_620_1_latest');
   assert.equal(request.cacheTTL, config.cacheTTL.gameInfo);
-  assert.deepEqual(result, {
+  assert.equal(typeof result.nextCursor, 'string');
+  assert.deepEqual({ ...result, nextCursor: undefined }, {
     appId: 620,
     source: 'official_app_announcements',
     announcements: [
@@ -79,7 +81,7 @@ test('retrieves full official app announcements through the shared request path'
         tags: ['patchnotes'],
       },
     ],
-    nextCursor: 1710000100,
+    nextCursor: undefined,
   });
 });
 
@@ -92,12 +94,46 @@ test('marks a trailing ellipsis as possible truncation and uses the default coun
   assert.equal(result.announcements[0].bodyStatus, 'possibly_truncated');
 });
 
-test('returns the oldest publication date as the backward cursor', async () => {
+test('paginates every announcement that shares a boundary timestamp', async () => {
   const client = new FixtureSteamClient(await loadFixture('app-announcements-pagination'));
 
-  const result = await client.getAppAnnouncements(620, { limit: 2 });
+  const first = await client.getAppAnnouncements(620, { limit: 1 });
+  const second = await client.getAppAnnouncements(620, {
+    limit: 1,
+    cursor: first.nextCursor,
+  });
+  const third = await client.getAppAnnouncements(620, {
+    limit: 1,
+    cursor: second.nextCursor,
+  });
 
-  assert.equal(result.nextCursor, 1700000100);
+  assert.deepEqual(
+    [first, second, third].map((page) => page.announcements[0].id),
+    ['1003', '1004', '1007']
+  );
+  assert.deepEqual(
+    client.requests.map((request) => new URL(request.url).searchParams.get('count')),
+    ['1', '2', '3']
+  );
+  assert.deepEqual(
+    client.requests.map((request) => new URL(request.url).searchParams.get('enddate')),
+    [null, '1700000200', '1700000200']
+  );
+});
+
+test('rejects a malformed announcement cursor before requesting Steam', async () => {
+  const client = new FixtureSteamClient(await loadFixture('app-announcements-empty'));
+  const alteredCursor = `${Buffer.from(
+    JSON.stringify({ before: 1700000200, seenIds: ['1003'] })
+  ).toString('base64url')}!!!`;
+
+  for (const cursor of ['not-a-valid-cursor', alteredCursor]) {
+    await assert.rejects(
+      client.getAppAnnouncements(620, { cursor }),
+      /Invalid app announcement cursor/
+    );
+  }
+  assert.equal(client.requests.length, 0);
 });
 
 test('returns a valid empty official announcement feed', async () => {

@@ -249,12 +249,12 @@ test('fetches official app announcements with backward pagination', async () => 
   const result = await toolModule.execute('fetch_app_announcements', {
     appId: 620,
     limit: 5,
-    before: 1710000000,
+    cursor: 'opaque-cursor',
   });
 
   assert.deepEqual(received, {
     appId: 620,
-    options: { limit: 5, before: 1710000000 },
+    options: { limit: 5, cursor: 'opaque-cursor' },
   });
   assert.deepEqual(JSON.parse(result.content[0].text), {
     appId: 620,
@@ -302,7 +302,7 @@ test('rejects invalid official announcement inputs before requesting Steam', asy
     { appId: 0 },
     { appId: 620, limit: 0 },
     { appId: 620, limit: 101 },
-    { appId: 620, before: -1 },
+    { appId: 620, cursor: '' },
   ]) {
     const result = await toolModule.execute('fetch_app_announcements', input);
     assert.equal(result.isError, true);

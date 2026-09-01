@@ -174,8 +174,8 @@ export interface FetchReviewsInput {
 export interface FetchAppAnnouncementsInput {
   appId: number;
   limit?: number;
-  /** Unix timestamp used to request announcements published before this time. */
-  before?: number;
+  /** Opaque cursor returned by the previous announcement page. */
+  cursor?: string;
 }
 
 export type AnnouncementBodyStatus = 'full_requested' | 'possibly_truncated' | 'malformed';
@@ -204,8 +204,8 @@ export interface AppAnnouncementsResponse {
   appId: number;
   source: 'official_app_announcements';
   announcements: SteamAppAnnouncement[];
-  /** Oldest publication timestamp in this page, suitable for the next `before` value. */
-  nextCursor: number | null;
+  /** Opaque cursor for the next older page. */
+  nextCursor: string | null;
 }
 
 /**

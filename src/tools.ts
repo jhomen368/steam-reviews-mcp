@@ -27,7 +27,7 @@ interface SteamSource {
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
   getAppAnnouncements(
     appId: number,
-    options?: Pick<FetchAppAnnouncementsInput, 'limit' | 'before'>
+    options?: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'>
   ): Promise<AppAnnouncementsResponse>;
 }
 
@@ -104,7 +104,7 @@ const analyzeReviewsSchema = z.object({
 const fetchAppAnnouncementsSchema = z.object({
   appId: z.number().int().positive().max(4294967295),
   limit: z.number().int().min(1).max(100).optional(),
-  before: z.number().int().positive().max(4294967295).optional(),
+  cursor: z.string().min(1).max(8192).optional(),
 });
 
 /** Build the human-readable summary returned with game information. */
@@ -428,12 +428,12 @@ export const tools: Tool[] = [
           minimum: 1,
           maximum: 100,
         },
-        before: {
-          type: 'integer',
+        cursor: {
+          type: 'string',
           description:
-            'Backward pagination cursor as a Unix timestamp. Returns announcements published before this time.',
-          minimum: 1,
-          maximum: 4294967295,
+            'Opaque backward pagination cursor from the previous response. Omit for the latest announcements.',
+          minLength: 1,
+          maxLength: 8192,
         },
       },
       required: ['appId'],
@@ -670,7 +670,7 @@ export function createToolModule(steamClient: SteamSource) {
     const validatedInput = fetchAppAnnouncementsSchema.parse(args);
     const result = await steamClient.getAppAnnouncements(validatedInput.appId, {
       limit: validatedInput.limit,
-      before: validatedInput.before,
+      cursor: validatedInput.cursor,
     });
 
     return {

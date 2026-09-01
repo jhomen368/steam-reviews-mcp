@@ -657,22 +657,51 @@ export class SteamAPIClient {
   /** Retrieve official Steam Community announcements for one app. */
   async getAppAnnouncements(
     appId: number,
-    options: Pick<FetchAppAnnouncementsInput, 'limit' | 'before'> = {}
+    options: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'> = {}
   ): Promise<AppAnnouncementsResponse> {
     const limit = options.limit ?? 20;
+    let boundaryTimestamp: number | undefined;
+    let seenBoundaryIds: string[] = [];
+
+    if (options.cursor !== undefined) {
+      try {
+        if (options.cursor.length > 8192) throw new Error('Cursor is too long');
+        const decodedBytes = Buffer.from(options.cursor, 'base64url');
+        if (decodedBytes.toString('base64url') !== options.cursor) {
+          throw new Error('Cursor encoding is not canonical');
+        }
+        const decoded = JSON.parse(decodedBytes.toString('utf8')) as Record<string, unknown>;
+        if (
+          typeof decoded.before !== 'number' ||
+          !Number.isInteger(decoded.before) ||
+          decoded.before < 0 ||
+          decoded.before > 4294967295 ||
+          !Array.isArray(decoded.seenIds) ||
+          decoded.seenIds.length === 0 ||
+          decoded.seenIds.length > 100 ||
+          !decoded.seenIds.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 64)
+        ) {
+          throw new Error('Cursor has an invalid shape');
+        }
+        boundaryTimestamp = decoded.before;
+        seenBoundaryIds = [...new Set(decoded.seenIds as string[])];
+      } catch {
+        throw new Error('Invalid app announcement cursor');
+      }
+    }
+
     const params = new URLSearchParams({
       appid: String(appId),
-      count: String(limit),
+      count: String(limit + seenBoundaryIds.length),
       maxlength: '0',
       feeds: 'steam_community_announcements',
     });
-    if (options.before !== undefined) {
-      // Steam's enddate boundary is inclusive, while the public option is strictly "before".
-      params.set('enddate', String(options.before - 1));
+    if (boundaryTimestamp !== undefined) {
+      params.set('enddate', String(boundaryTimestamp));
     }
     params.set('format', 'json');
 
-    const cacheKey = `app_announcements_${appId}_${limit}_${options.before ?? 'latest'}`;
+    const cacheKey = `app_announcements_${appId}_${limit}_${options.cursor ?? 'latest'}`;
     const apiUrl = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?${params.toString()}`;
     const response = await this.get<SteamAppNewsResponse>(
       apiUrl,
@@ -686,11 +715,20 @@ export class SteamAPIClient {
     }
 
     const announcements: SteamAppAnnouncement[] = [];
+    const seenBoundaryIdSet = new Set(seenBoundaryIds);
     for (const rawItem of appNews.newsitems) {
       if (!rawItem || typeof rawItem !== 'object') continue;
       const item = rawItem as Record<string, unknown>;
 
       if (item.feedname !== 'steam_community_announcements' || item.appid !== appId) {
+        continue;
+      }
+
+      if (
+        item.date === boundaryTimestamp &&
+        typeof item.gid === 'string' &&
+        seenBoundaryIdSet.has(item.gid)
+      ) {
         continue;
       }
 
@@ -733,13 +771,29 @@ export class SteamAPIClient {
         containsSteamImagePlaceholders: body?.includes('{STEAM_CLAN_IMAGE}') ?? false,
         ...(tags && tags.length > 0 ? { tags } : {}),
       });
+
+      if (announcements.length === limit) break;
     }
 
-    const nextCursor = announcements.reduce<number | null>(
+    const oldestTimestamp = announcements.reduce<number | null>(
       (oldest, announcement) =>
         oldest === null || announcement.publishedAt < oldest ? announcement.publishedAt : oldest,
       null
     );
+    const nextCursor =
+      oldestTimestamp === null
+        ? null
+        : Buffer.from(
+            JSON.stringify({
+              before: oldestTimestamp,
+              seenIds: [
+                ...(oldestTimestamp === boundaryTimestamp ? seenBoundaryIds : []),
+                ...announcements
+                  .filter((announcement) => announcement.publishedAt === oldestTimestamp)
+                  .map((announcement) => announcement.id),
+              ],
+            })
+          ).toString('base64url');
 
     return {
       appId,
