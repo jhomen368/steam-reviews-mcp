@@ -24,6 +24,13 @@ const review = {
   writtenDuringEarlyAccess: false,
 };
 
+const noDeckResult = {
+  source: 'valve_steam_deck_compatibility',
+  category: 'unknown',
+  categoryCode: null,
+  testResults: [],
+};
+
 test('lists the Steam research tools', () => {
   const toolModule = createToolModule({});
 
@@ -113,6 +120,19 @@ test('returns processed game information', async () => {
         },
       ];
     },
+    async getDeckCompatibility() {
+      return {
+        source: 'valve_steam_deck_compatibility',
+        category: 'verified',
+        categoryCode: 3,
+        testResults: [
+          {
+            displayType: 4,
+            token: '#SteamDeckVerified_TestResult_DefaultControllerConfigFullyFunctional',
+          },
+        ],
+      };
+    },
   });
 
   const result = await toolModule.execute('get_game_info', {
@@ -126,6 +146,17 @@ test('returns processed game information', async () => {
       name: 'Portal 2',
       isFree: true,
       platforms: { windows: true, mac: false, linux: true },
+      deckCompatibility: {
+        source: 'valve_steam_deck_compatibility',
+        category: 'verified',
+        categoryCode: 3,
+        testResults: [
+          {
+            displayType: 4,
+            token: '#SteamDeckVerified_TestResult_DefaultControllerConfigFullyFunctional',
+          },
+        ],
+      },
       infoSummary: 'Free to play | Platforms: Windows, Linux',
     },
   ]);
@@ -144,6 +175,9 @@ test('treats an all-default criteria object as no game filter', async () => {
         scorePercent: 90,
         scoreText: 'Very Positive',
       };
+    },
+    async getDeckCompatibility() {
+      return noDeckResult;
     },
   });
 
@@ -190,6 +224,9 @@ test('applies positive and true game criteria', async () => {
         scoreText: 'Positive',
       };
     },
+    async getDeckCompatibility() {
+      return noDeckResult;
+    },
   });
 
   const appIdsFor = async (criteria) => {
@@ -206,6 +243,39 @@ test('applies positive and true game criteria', async () => {
   assert.deepEqual(await appIdsFor({ requireFree: true }), [730]);
   assert.deepEqual(await appIdsFor({ requireMetacritic: true }), [620]);
   assert.deepEqual(await appIdsFor({ minMetacritic: 85 }), [620]);
+});
+
+test('keeps base game information when Steam Deck evidence is unavailable', async () => {
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      return [
+        { appId: 620, name: 'Portal 2' },
+        { appId: 730, name: 'Counter-Strike 2' },
+      ];
+    },
+    async getDeckCompatibility(appId) {
+      if (appId === 730) throw new Error('Malformed Steam Deck response');
+      return noDeckResult;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620, 730],
+    includeStats: false,
+  });
+  const games = JSON.parse(result.content[0].text);
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(games[0].deckCompatibility, noDeckResult);
+  assert.equal(games[0].warnings, undefined);
+  assert.equal(games[1].name, 'Counter-Strike 2');
+  assert.equal(games[1].deckCompatibility, undefined);
+  assert.deepEqual(games[1].warnings, [
+    {
+      source: 'steam_deck_compatibility',
+      message: 'Steam Deck compatibility is unavailable for AppID 730',
+    },
+  ]);
 });
 
 test('fetches reviews with the requested filters', async () => {

@@ -27,6 +27,7 @@ import type {
   FetchAppAnnouncementsInput,
   SteamAppAnnouncement,
   SteamAppNewsResponse,
+  SteamDeckCompatibility,
 } from '../types.js';
 
 /**
@@ -416,6 +417,89 @@ export class SteamAPIClient {
     }
 
     return results;
+  }
+
+  /** Retrieve Valve's Steam Deck compatibility report for one app. */
+  async getDeckCompatibility(appId: number): Promise<SteamDeckCompatibility> {
+    const malformedResponse = new Error(
+      `Malformed Steam Deck compatibility response for AppID ${appId}`
+    );
+    const params = new URLSearchParams({ nAppID: String(appId) });
+    const apiUrl = `https://store.steampowered.com/saleaction/ajaxgetdeckappcompatibilityreport?${params.toString()}`;
+    const response = await this.get<unknown>(
+      apiUrl,
+      `deck_compatibility_${appId}`,
+      this.config.cacheTTL.gameInfo
+    );
+
+    if (!response || typeof response !== 'object') {
+      throw malformedResponse;
+    }
+
+    const envelope = response as Record<string, unknown>;
+    const results = envelope.results;
+    if (envelope.success !== 1) {
+      throw malformedResponse;
+    }
+    if (Array.isArray(results)) {
+      if (results.length === 0) {
+        return {
+          source: 'valve_steam_deck_compatibility',
+          category: 'unknown',
+          categoryCode: null,
+          testResults: [],
+        };
+      }
+      throw malformedResponse;
+    }
+    if (!results || typeof results !== 'object') {
+      throw malformedResponse;
+    }
+
+    const report = results as Record<string, unknown>;
+    if (
+      report.appid !== appId ||
+      !Number.isInteger(report.resolved_category) ||
+      !Array.isArray(report.resolved_items)
+    ) {
+      throw malformedResponse;
+    }
+
+    const testResults = report.resolved_items.map((rawItem) => {
+      if (!rawItem || typeof rawItem !== 'object') {
+        throw malformedResponse;
+      }
+
+      const item = rawItem as Record<string, unknown>;
+      if (
+        !Number.isInteger(item.display_type) ||
+        typeof item.loc_token !== 'string' ||
+        item.loc_token.length === 0
+      ) {
+        throw malformedResponse;
+      }
+
+      return {
+        displayType: item.display_type as number,
+        token: item.loc_token,
+      };
+    });
+    const categoryCode = report.resolved_category as number;
+    const category =
+      categoryCode === 1
+        ? 'unsupported'
+        : categoryCode === 2
+          ? 'playable'
+          : categoryCode === 3
+            ? 'verified'
+            : 'unknown';
+
+    return {
+      source: 'valve_steam_deck_compatibility',
+      category,
+      categoryCode,
+      testResults,
+    };
   }
 
   /**

@@ -35,7 +35,7 @@
         },
         {
           "name": "get_game_info",
-          "description": "Get detailed information about Steam games including system requirements and DLC"
+          "description": "Get detailed Steam game information including Steam Deck compatibility"
         },
         {
           "name": "fetch_reviews",

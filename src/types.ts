@@ -39,6 +39,28 @@ export interface SteamGame {
     appId: number;
     name: string;
   }>;
+  deckCompatibility?: SteamDeckCompatibility;
+  warnings?: SteamDeckCompatibilityWarning[];
+}
+
+export type SteamDeckCategory = 'unknown' | 'unsupported' | 'playable' | 'verified';
+
+/** Valve's published Steam Deck compatibility report for one app. */
+export interface SteamDeckCompatibility {
+  source: 'valve_steam_deck_compatibility';
+  category: SteamDeckCategory;
+  /** Valve's raw category code, or null when Valve has not published a result. */
+  categoryCode: number | null;
+  testResults: Array<{
+    displayType: number;
+    token: string;
+  }>;
+}
+
+/** Warning that Valve's Steam Deck compatibility report could not be retrieved. */
+export interface SteamDeckCompatibilityWarning {
+  source: 'steam_deck_compatibility';
+  message: string;
 }
 
 /**
