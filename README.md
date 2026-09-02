@@ -148,6 +148,13 @@ get_game_info({
 Omit `criteria` when no filtering is needed. Zero and `false` criteria values are inactive;
 use `requireFree: true` to return only free games.
 
+Each returned game includes Valve's Steam Deck compatibility evidence when available. Known
+`category` values are `verified`, `playable`, `unsupported`, and `unknown`. The raw
+`categoryCode` and Valve test-result `token` values are retained so new values are not discarded.
+`categoryCode: null` means Valve has not published a result and is reported as `unknown`, not
+`unsupported`. If Steam's Deck endpoint fails or returns malformed data, the game remains in the
+result with a `steam_deck_compatibility` warning and no `deckCompatibility` claim.
+
 ### Fetch Reviews with Filters
 
 ```typescript

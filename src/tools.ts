@@ -9,6 +9,7 @@ import type {
   PaginatedReviewsResponse,
   Review,
   ReviewStats,
+  SteamDeckCompatibility,
   SteamGame,
 } from './types.js';
 
@@ -23,6 +24,7 @@ interface SteamSource {
   getAppDetails(appIds: number | number[]): Promise<SteamGame[]>;
   getReviewSummary(appId: number): Promise<ReviewStats | null>;
   getCurrentPlayers(appId: number): Promise<number>;
+  getDeckCompatibility(appId: number): Promise<SteamDeckCompatibility>;
   fetchDlcNames(dlcAppIds: number[]): Promise<Map<number, string>>;
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
   getAppAnnouncements(
@@ -221,7 +223,7 @@ export const tools: Tool[] = [
   {
     name: 'get_game_info',
     description:
-      'Get detailed information about one or more Steam games by AppID. Returns comprehensive game data including description, price, developers, publishers, platforms, metacritic score, review statistics, and optionally system requirements and DLC list. Supports filtering by review quality criteria.',
+      "Get detailed information about one or more Steam games by AppID. Returns game data, review statistics, and Valve's Steam Deck compatibility report. Steam Deck evidence includes the category, raw category code, and available test-result tokens; retrieval failures produce per-game warnings without removing base information. System requirements and DLC are optional. Supports filtering by review quality criteria.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -556,10 +558,30 @@ export function createToolModule(steamClient: SteamSource) {
       );
     }
 
-    const enrichedGames = filteredGames.map((game) => ({
-      ...game,
-      infoSummary: generateInfoSummary(game, game.reviewStats ?? null),
-    }));
+    const enrichedGames = await Promise.all(
+      filteredGames.map(async (game) => {
+        try {
+          const deckCompatibility = await steamClient.getDeckCompatibility(game.appId);
+          return {
+            ...game,
+            deckCompatibility,
+            infoSummary: generateInfoSummary(game, game.reviewStats ?? null),
+          };
+        } catch (error) {
+          console.error(`Failed to get Steam Deck compatibility for ${game.appId}:`, error);
+          return {
+            ...game,
+            warnings: [
+              {
+                source: 'steam_deck_compatibility' as const,
+                message: `Steam Deck compatibility is unavailable for AppID ${game.appId}`,
+              },
+            ],
+            infoSummary: generateInfoSummary(game, game.reviewStats ?? null),
+          };
+        }
+      })
+    );
 
     return {
       content: [

@@ -1,0 +1,13 @@
+{
+  "success": 1,
+  "results": {
+    "appid": 620,
+    "resolved_category": 99,
+    "resolved_items": [
+      {
+        "display_type": 99,
+        "loc_token": "#SteamDeckVerified_TestResult_FutureValveToken"
+      }
+    ]
+  }
+}
