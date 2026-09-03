@@ -1,0 +1,17 @@
+{
+  "480": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Spacewar",
+      "steam_appid": 480,
+      "required_age": 0,
+      "is_free": false,
+      "short_description": "No individual quote is available for this storefront",
+      "release_date": {
+        "coming_soon": false,
+        "date": ""
+      }
+    }
+  }
+}

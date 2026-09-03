@@ -14,9 +14,12 @@ import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
+import { DEFAULT_STOREFRONT } from './storefront.js';
+import type { StorefrontOptions } from './storefront.js';
 import type {
   ServerConfig,
   SteamGame,
+  SteamGameInfo,
   SteamAppDetailsResponse,
   ReviewStats,
   FetchReviewsInput,
@@ -341,7 +344,8 @@ export class SteamAPIClient {
    * this limitation.
    *
    * @param appIds - Single AppID or array of AppIDs to fetch
-   * @returns Promise resolving to an array of SteamGame objects
+   * @param options - Effective Steam store country and language
+   * @returns Promise resolving to game information or explicit unavailable results
    *
    * @example
    * ```typescript
@@ -352,71 +356,82 @@ export class SteamAPIClient {
    * const games = await client.getAppDetails([570, 730]);
    * ```
    */
-  async getAppDetails(appIds: number | number[]): Promise<SteamGame[]> {
+  async getAppDetails(
+    appIds: number | number[],
+    options: StorefrontOptions = DEFAULT_STOREFRONT
+  ): Promise<SteamGameInfo[]> {
     // Normalize to array
     const appIdArray = Array.isArray(appIds) ? appIds : [appIds];
-
-    // Check cache for each game individually
-    const results: SteamGame[] = [];
-    const uncachedAppIds: number[] = [];
-
-    for (const appId of appIdArray) {
-      const cacheKey = `game_${appId}`;
-      if (this.config.cacheEnabled) {
-        const cached = this.cache.get(cacheKey) as SteamGame | undefined;
-        if (cached !== undefined) {
-          results.push(cached);
-          continue;
-        }
-      }
-      uncachedAppIds.push(appId);
-    }
-
-    // If all games were cached, return early
-    if (uncachedAppIds.length === 0) {
-      return results;
-    }
 
     // Steam disabled multiple AppIDs in a single request (November 2014).
     // We must make individual requests for each AppID.
     // Make requests in parallel for efficiency
-    const fetchPromises = uncachedAppIds.map(async (appId) => {
+    const fetchPromises = appIdArray.map(async (appId) => {
       try {
-        const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&l=english`;
-        const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
+        const gameData = await this.getStoreAppDetails(appId, options);
 
-        const appIdStr = appId.toString();
-        const gameData = response[appIdStr];
-
-        if (gameData && gameData.success && gameData.data) {
-          const steamGame = this.normalizeAppDetails(gameData.data);
-
-          // Cache the normalized game data
-          const cacheKey = `game_${appId}`;
-          if (this.config.cacheEnabled) {
-            this.cache.set(cacheKey, steamGame, this.config.cacheTTL.gameInfo);
-          }
-
-          return steamGame;
+        if (gameData?.success && this.hasUsableAppDetails(gameData.data, appId)) {
+          return this.normalizeAppDetails(gameData.data, options);
         }
-        return null;
+        return this.unavailableAppDetails(appId, options);
       } catch (error) {
-        // Log error but don't throw - just skip this game
         console.error(`Failed to fetch game ${appId}:`, error);
-        return null;
+        return this.unavailableAppDetails(appId, options);
       }
     });
 
-    const fetchedGames = await Promise.all(fetchPromises);
+    return Promise.all(fetchPromises);
+  }
 
-    // Add successfully fetched games to results
-    for (const game of fetchedGames) {
-      if (game !== null) {
-        results.push(game);
-      }
-    }
+  private unavailableAppDetails(appId: number, storefront: StorefrontOptions): SteamGameInfo {
+    return {
+      appId,
+      storefront: {
+        ...storefront,
+        languageStatus: 'requested_not_verified',
+        priceStatus: 'unavailable',
+      },
+      warnings: [
+        {
+          source: 'steam_store',
+          message: `Steam Store information is unavailable for AppID ${appId}`,
+        },
+      ],
+    };
+  }
 
-    return results;
+  private async getStoreAppDetails(
+    appId: number,
+    storefront: StorefrontOptions
+  ): Promise<SteamAppDetailsResponse | undefined> {
+    const params = new URLSearchParams({
+      appids: String(appId),
+      cc: storefront.country,
+      l: storefront.language,
+    });
+    const apiUrl = `https://store.steampowered.com/api/appdetails?${params.toString()}`;
+    const cacheKey = `appdetails_${appId}_${storefront.country}_${storefront.language}`;
+    const response = await this.get<Record<string, SteamAppDetailsResponse>>(
+      apiUrl,
+      cacheKey,
+      this.config.cacheTTL.gameInfo
+    );
+    return response[String(appId)];
+  }
+
+  private hasUsableAppDetails(
+    data: SteamAppDetailsResponse['data'] | undefined,
+    requestedAppId: number
+  ): data is NonNullable<SteamAppDetailsResponse['data']> {
+    return (
+      data !== undefined &&
+      typeof data === 'object' &&
+      Number.isInteger(data.steam_appid) &&
+      data.steam_appid === requestedAppId &&
+      typeof data.name === 'string' &&
+      data.name.length > 0 &&
+      typeof data.is_free === 'boolean'
+    );
   }
 
   /** Retrieve Valve's Steam Deck compatibility report for one app. */
@@ -508,7 +523,27 @@ export class SteamAPIClient {
    * @param data - Raw game data from Steam API
    * @returns Normalized SteamGame object
    */
-  private normalizeAppDetails(data: NonNullable<SteamAppDetailsResponse['data']>): SteamGame {
+  private normalizeAppDetails(
+    data: NonNullable<SteamAppDetailsResponse['data']>,
+    storefront: StorefrontOptions
+  ): SteamGame {
+    const regionalQuote = data.price_overview;
+    const hasValidRegionalQuote =
+      regionalQuote !== undefined &&
+      typeof regionalQuote.currency === 'string' &&
+      regionalQuote.currency.length > 0 &&
+      typeof regionalQuote.final === 'number' &&
+      Number.isFinite(regionalQuote.final) &&
+      regionalQuote.final >= 0 &&
+      typeof regionalQuote.final_formatted === 'string' &&
+      regionalQuote.final_formatted.length > 0;
+    const priceStatus = hasValidRegionalQuote
+      ? 'available'
+      : data.is_free
+        ? 'free'
+        : data.release_date?.coming_soon
+          ? 'unreleased'
+          : 'unavailable';
     const game: SteamGame = {
       appId: data.steam_appid,
       name: data.name,
@@ -519,6 +554,11 @@ export class SteamAPIClient {
       publishers: data.publishers,
       releaseDate: data.release_date?.date,
       isFree: data.is_free,
+      storefront: {
+        ...storefront,
+        languageStatus: 'requested_not_verified',
+        priceStatus,
+      },
       platforms: data.platforms
         ? {
             windows: data.platforms.windows,
@@ -531,11 +571,20 @@ export class SteamAPIClient {
       tags: data.genres?.map((g) => g.description), // Use genres as tags for now
     };
 
+    if (regionalQuote && !hasValidRegionalQuote) {
+      game.warnings = [
+        {
+          source: 'steam_store',
+          message: `Steam returned a malformed regional quote for AppID ${data.steam_appid}`,
+        },
+      ];
+    }
+
     // Handle price data
-    if (data.price_overview) {
-      game.priceFormatted = data.price_overview.final_formatted;
-      game.priceRaw = data.price_overview.final;
-      game.currency = data.price_overview.currency;
+    if (hasValidRegionalQuote) {
+      game.priceFormatted = regionalQuote.final_formatted;
+      game.priceRaw = regionalQuote.final;
+      game.currency = regionalQuote.currency;
     } else if (data.is_free) {
       game.priceFormatted = 'Free';
       game.priceRaw = 0;
@@ -567,6 +616,7 @@ export class SteamAPIClient {
    * we need to make separate API calls to get the DLC names.
    *
    * @param dlcAppIds - Array of DLC AppIDs to fetch names for
+   * @param options - Effective Steam store country and language
    * @returns Promise resolving to a map of AppID to name
    *
    * @example
@@ -575,35 +625,19 @@ export class SteamAPIClient {
    * // Returns: Map { 2378500 => "Baldur's Gate 3 - Digital Deluxe Edition Upgrade", ... }
    * ```
    */
-  async fetchDlcNames(dlcAppIds: number[]): Promise<Map<number, string>> {
+  async fetchDlcNames(
+    dlcAppIds: number[],
+    options: StorefrontOptions = DEFAULT_STOREFRONT
+  ): Promise<Map<number, string>> {
     const dlcNames = new Map<number, string>();
 
     // Fetch DLC details in parallel
     const fetchPromises = dlcAppIds.map(async (dlcId) => {
       try {
-        const cacheKey = `dlc_${dlcId}`;
-
-        // Check cache first
-        if (this.config.cacheEnabled) {
-          const cached = this.cache.get(cacheKey) as string | undefined;
-          if (cached !== undefined) {
-            dlcNames.set(dlcId, cached);
-            return;
-          }
-        }
-
-        const apiUrl = `https://store.steampowered.com/api/appdetails?appids=${dlcId}&cc=us&l=english`;
-        const response = await this.get<Record<string, SteamAppDetailsResponse>>(apiUrl);
-
-        const dlcData = response[dlcId.toString()];
+        const dlcData = await this.getStoreAppDetails(dlcId, options);
         if (dlcData && dlcData.success && dlcData.data) {
           const name = dlcData.data.name;
           dlcNames.set(dlcId, name);
-
-          // Cache the DLC name
-          if (this.config.cacheEnabled) {
-            this.cache.set(cacheKey, name, this.config.cacheTTL.gameInfo);
-          }
         }
       } catch (error) {
         // If we can't fetch DLC name, we'll use a placeholder

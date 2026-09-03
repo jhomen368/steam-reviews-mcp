@@ -130,11 +130,13 @@ search_steam_games({
 Search terms must not be blank. If a generated client sends `queries: []` alongside a valid
 `query`, the empty batch field is ignored.
 
-### Get Game Info with Criteria
+### Get Regional Game Info with Criteria
 
 ```typescript
 get_game_info({
   appIds: [1086940, 1245620],
+  country: "de",
+  language: "german",
   criteria: {
     minReviewScore: 80,
     minReviews: 1000,
@@ -144,6 +146,25 @@ get_game_info({
   includeDlc: true
 })
 ```
+
+`country` accepts two-letter ISO 3166-1 store country codes and `language` accepts Steam's internal
+language codes, such as `english`, `german`, and `schinese`. They default to `us` and `english`. ISO
+language codes such as `en`, `de`, and `zh` are rejected before a Steam request.
+
+Each game includes a `storefront` object identifying the requested country and language.
+Its `priceStatus` distinguishes an `available` regional quote, a genuinely `free` game, an
+`unreleased` game, and an `unavailable` quote. `currency` and `priceFormatted` preserve Steam's
+current regional quote without conversion. Missing quote fields never imply that a game is free.
+If Steam returns no usable app details, the AppID and storefront context remain in the result with
+a `steam_store` warning instead of disappearing or being presented as a free game.
+An `unavailable` quote does not infer whether the cause is delisting, package-only sale, regional
+restriction, or another Store condition. Active criteria still exclude results that cannot satisfy
+the requested filter.
+
+Steam does not report which language it actually served and may silently fall back when a
+translation is missing. For that reason, `storefront.languageStatus` is
+`requested_not_verified`: it records the request context without claiming that returned text was
+translated into the requested language.
 
 Omit `criteria` when no filtering is needed. Zero and `false` criteria values are inactive;
 use `requireFree: true` to return only free games.
