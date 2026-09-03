@@ -292,6 +292,37 @@ export type SteamLanguage = (typeof STEAM_LANGUAGES)[number];
 
 const steamStoreCountrySet = new Set<string>(STORE_COUNTRY_CODES);
 const steamLanguageSet = new Set<string>(STEAM_LANGUAGES);
+const steamLanguageById: Readonly<Record<number, SteamLanguage>> = {
+  0: 'english',
+  1: 'german',
+  2: 'french',
+  3: 'italian',
+  4: 'koreana',
+  5: 'spanish',
+  6: 'schinese',
+  7: 'tchinese',
+  8: 'russian',
+  9: 'thai',
+  10: 'japanese',
+  11: 'portuguese',
+  12: 'polish',
+  13: 'danish',
+  14: 'dutch',
+  15: 'finnish',
+  16: 'norwegian',
+  17: 'swedish',
+  18: 'hungarian',
+  19: 'czech',
+  20: 'romanian',
+  21: 'turkish',
+  22: 'brazilian',
+  23: 'bulgarian',
+  24: 'greek',
+  25: 'ukrainian',
+  26: 'latam',
+  27: 'vietnamese',
+  28: 'indonesian',
+};
 
 /** Check whether a value is an ISO 3166-1 alpha-2 country code. */
 export function isSteamStoreCountry(value: string): boolean {
@@ -301,6 +332,11 @@ export function isSteamStoreCountry(value: string): boolean {
 /** Check whether a value uses Steam's internal language-code vocabulary. */
 export function isSteamLanguage(value: string): boolean {
   return steamLanguageSet.has(value);
+}
+
+/** Map Valve's numeric ELanguage value to its Steam Store language code. */
+export function steamLanguageForId(value: number): SteamLanguage | undefined {
+  return steamLanguageById[value];
 }
 
 export interface StorefrontOptions {

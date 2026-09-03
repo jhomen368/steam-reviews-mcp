@@ -20,6 +20,50 @@ export interface SteamStoreWarning {
   message: string;
 }
 
+export interface SteamLanguageSupportWarning {
+  source: 'steam_language_support';
+  message: string;
+}
+
+export interface SteamPurchaseNotices {
+  source: 'steam_store_declaration';
+  thirdPartyAccount: {
+    status: 'supplied' | 'not_supplied' | 'malformed';
+    rawText: string | null;
+  };
+  drmOrLauncher: {
+    status: 'supplied' | 'not_supplied' | 'malformed';
+    rawText: string | null;
+  };
+  absenceMeaning: 'not_supplied_is_not_evidence_of_absence';
+}
+
+export interface SteamSupportedLanguage {
+  languageCode?: SteamLanguage;
+  languageId: number;
+  additionalLanguageId: number;
+  supported: boolean;
+  fullAudio: boolean;
+  subtitles: boolean;
+}
+
+export interface SteamLanguageSupport {
+  source: 'steam_store_declaration';
+  status: 'structured' | 'partial_raw_only' | 'unavailable';
+  rawDeclaration: string | null;
+  languages: SteamSupportedLanguage[];
+}
+
+export interface SteamStoreCategories {
+  source: 'steam_store_declaration';
+  status: 'supplied' | 'not_supplied' | 'malformed';
+  independentlyTested: false;
+  items: Array<{
+    id: number;
+    label: string;
+  }>;
+}
+
 /**
  * Represents a Steam game with basic information
  */
@@ -56,7 +100,10 @@ export interface SteamGame {
     name: string;
   }>;
   deckCompatibility?: SteamDeckCompatibility;
-  warnings?: Array<SteamDeckCompatibilityWarning | SteamStoreWarning>;
+  purchaseNotices?: SteamPurchaseNotices;
+  languageSupport?: SteamLanguageSupport;
+  storeCategories?: SteamStoreCategories;
+  warnings?: Array<SteamDeckCompatibilityWarning | SteamStoreWarning | SteamLanguageSupportWarning>;
 }
 
 /** Store request result when Steam returns no usable app details. */
@@ -204,6 +251,9 @@ export interface GetGameInfoInput {
   language?: SteamLanguage; // Default: english
   includeStats?: boolean; // Default: true
   includeCurrentPlayers?: boolean; // Default: false
+  criteria?: GameInfoCriteria;
+  includeRequirements?: boolean;
+  includeDlc?: boolean;
 }
 
 /**
@@ -349,6 +399,13 @@ export interface SteamAppDetailsResponse {
       minimum?: string;
       recommended?: string;
     };
+    ext_user_account_notice?: string;
+    drm_notice?: string;
+    supported_languages?: string;
+    categories?: Array<{
+      id: number;
+      description: string;
+    }>;
     dlc?: number[];
   };
 }

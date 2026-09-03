@@ -1,0 +1,47 @@
+{
+  "response": {
+    "store_items": [
+      {
+        "appid": 620,
+        "success": 1,
+        "supported_languages": [
+          {
+            "elanguage": 0,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": true,
+            "subtitles": true
+          },
+          {
+            "elanguage": 4,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": false,
+            "subtitles": true
+          },
+          {
+            "elanguage": 22,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": true,
+            "subtitles": true
+          },
+          {
+            "elanguage": 28,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": false,
+            "subtitles": true
+          },
+          {
+            "elanguage": 99,
+            "eadditionallanguage": 42,
+            "supported": true,
+            "full_audio": false,
+            "subtitles": false
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "620": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Portal 2",
+      "steam_appid": 620,
+      "required_age": 0,
+      "is_free": false,
+      "short_description": "Das kooperative Testprogramm",
+      "ext_user_account_notice": "  Drittanbieter-Konto: EA-Konto erforderlich  ",
+      "drm_notice": "Denuvo Anti-Tamper<br>5 Aktivierungen pro Tag",
+      "supported_languages": "Englisch<strong>*</strong>, Deutsch<br><strong>*</strong>Sprachen mit voller Audiounterstützung",
+      "categories": [
+        { "id": 2, "description": "Einzelspieler" },
+        { "id": 1, "description": "Mehrspieler" },
+        { "id": 9, "description": "Koop" },
+        { "id": 18, "description": "Teilweise Controllerunterstützung" },
+        { "id": 22, "description": "Steam-Erfolge" },
+        { "id": 23, "description": "Steam Cloud" },
+        { "id": 28, "description": "Volle Controllerunterstützung" },
+        { "id": 9999, "description": "Zukünftige Funktion" }
+      ],
+      "pc_requirements": {
+        "minimum": "<strong>Minimum:</strong> Deutsches Betriebssystem",
+        "recommended": "<strong>Empfohlen:</strong> Deutscher Prozessor"
+      }
+    }
+  }
+}
