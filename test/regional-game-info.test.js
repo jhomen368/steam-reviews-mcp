@@ -98,6 +98,17 @@ test('reports an unreleased game without presenting it as free', async () => {
   assert.equal(game.storefront.priceStatus, 'unreleased');
 });
 
+test('reports a priced pre-purchase game as unreleased and preserves its quote', async () => {
+  const client = new FixtureSteamClient(await loadFixture('appdetails-unreleased-priced'));
+
+  const [game] = await client.getAppDetails(220, { country: 'de', language: 'german' });
+
+  assert.equal(game.storefront.priceStatus, 'unreleased');
+  assert.equal(game.currency, 'EUR');
+  assert.equal(game.priceRaw, 2999);
+  assert.equal(game.priceFormatted, '29,99€');
+});
+
 test('does not claim Steam confirmed the requested translation', async () => {
   const client = new FixtureSteamClient(await loadFixture('appdetails-language-fallback'));
 

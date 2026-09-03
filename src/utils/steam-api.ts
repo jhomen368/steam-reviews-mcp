@@ -537,12 +537,12 @@ export class SteamAPIClient {
       regionalQuote.final >= 0 &&
       typeof regionalQuote.final_formatted === 'string' &&
       regionalQuote.final_formatted.length > 0;
-    const priceStatus = hasValidRegionalQuote
-      ? 'available'
-      : data.is_free
-        ? 'free'
-        : data.release_date?.coming_soon
-          ? 'unreleased'
+    const priceStatus = data.release_date?.coming_soon
+      ? 'unreleased'
+      : hasValidRegionalQuote
+        ? 'available'
+        : data.is_free
+          ? 'free'
           : 'unavailable';
     const game: SteamGame = {
       appId: data.steam_appid,
