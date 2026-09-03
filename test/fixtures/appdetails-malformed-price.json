@@ -1,0 +1,22 @@
+{
+  "480": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Spacewar",
+      "steam_appid": 480,
+      "required_age": 0,
+      "is_free": false,
+      "price_overview": {
+        "currency": "USD",
+        "initial": 999,
+        "final": 999,
+        "discount_percent": 0
+      },
+      "release_date": {
+        "coming_soon": false,
+        "date": ""
+      }
+    }
+  }
+}

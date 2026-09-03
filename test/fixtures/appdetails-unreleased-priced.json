@@ -1,0 +1,24 @@
+{
+  "220": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Future Game",
+      "steam_appid": 220,
+      "required_age": 0,
+      "is_free": false,
+      "short_description": "Available for pre-purchase",
+      "price_overview": {
+        "currency": "EUR",
+        "initial": 2999,
+        "final": 2999,
+        "discount_percent": 0,
+        "final_formatted": "29,99€"
+      },
+      "release_date": {
+        "coming_soon": true,
+        "date": "Coming soon"
+      }
+    }
+  }
+}

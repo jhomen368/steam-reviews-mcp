@@ -1,0 +1,17 @@
+{
+  "220": {
+    "success": true,
+    "data": {
+      "type": "game",
+      "name": "Future Game",
+      "steam_appid": 220,
+      "required_age": 0,
+      "is_free": false,
+      "short_description": "Coming soon",
+      "release_date": {
+        "coming_soon": true,
+        "date": "To be announced"
+      }
+    }
+  }
+}

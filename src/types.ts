@@ -5,6 +5,21 @@
  * the application for Steam game data, reviews, and analysis.
  */
 
+import type { SteamLanguage, SteamStoreCountry } from './utils/storefront.js';
+
+export interface SteamStorefrontContext {
+  country: SteamStoreCountry;
+  language: SteamLanguage;
+  /** Steam does not confirm which language it served and may silently fall back. */
+  languageStatus: 'requested_not_verified';
+  priceStatus: 'available' | 'free' | 'unreleased' | 'unavailable';
+}
+
+export interface SteamStoreWarning {
+  source: 'steam_store';
+  message: string;
+}
+
 /**
  * Represents a Steam game with basic information
  */
@@ -21,6 +36,7 @@ export interface SteamGame {
   priceFormatted?: string;
   priceRaw?: number;
   currency?: string;
+  storefront?: SteamStorefrontContext;
   metacriticScore?: number;
   tags?: string[];
   genres?: string[];
@@ -40,8 +56,17 @@ export interface SteamGame {
     name: string;
   }>;
   deckCompatibility?: SteamDeckCompatibility;
-  warnings?: SteamDeckCompatibilityWarning[];
+  warnings?: Array<SteamDeckCompatibilityWarning | SteamStoreWarning>;
 }
+
+/** Store request result when Steam returns no usable app details. */
+export interface UnavailableSteamGame {
+  appId: number;
+  storefront: SteamStorefrontContext & { priceStatus: 'unavailable' };
+  warnings: SteamStoreWarning[];
+}
+
+export type SteamGameInfo = SteamGame | UnavailableSteamGame;
 
 export type SteamDeckCategory = 'unknown' | 'unsupported' | 'playable' | 'verified';
 
@@ -175,6 +200,8 @@ export interface SearchGamesInput {
  */
 export interface GetGameInfoInput {
   appIds: number[]; // Support batch queries
+  country?: SteamStoreCountry; // Default: us
+  language?: SteamLanguage; // Default: english
   includeStats?: boolean; // Default: true
   includeCurrentPlayers?: boolean; // Default: false
 }

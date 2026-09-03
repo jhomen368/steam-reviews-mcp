@@ -1,6 +1,15 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { analyzeTopicFocused, summarizeReviews } from './utils/analysis.js';
+import {
+  DEFAULT_STORE_COUNTRY,
+  DEFAULT_STORE_LANGUAGE,
+  STORE_COUNTRY_CODES,
+  STEAM_LANGUAGES,
+  isSteamLanguage,
+  isSteamStoreCountry,
+} from './utils/storefront.js';
+import type { StorefrontOptions } from './utils/storefront.js';
 import type {
   FetchReviewsInput,
   FetchAppAnnouncementsInput,
@@ -11,6 +20,7 @@ import type {
   ReviewStats,
   SteamDeckCompatibility,
   SteamGame,
+  SteamGameInfo,
 } from './types.js';
 
 type ReviewOptions = Partial<FetchReviewsInput> & {
@@ -21,11 +31,11 @@ type ReviewOptions = Partial<FetchReviewsInput> & {
 
 interface SteamSource {
   searchGames(query: string, limit?: number): Promise<SteamGame[]>;
-  getAppDetails(appIds: number | number[]): Promise<SteamGame[]>;
+  getAppDetails(appIds: number | number[], options?: StorefrontOptions): Promise<SteamGameInfo[]>;
   getReviewSummary(appId: number): Promise<ReviewStats | null>;
   getCurrentPlayers(appId: number): Promise<number>;
   getDeckCompatibility(appId: number): Promise<SteamDeckCompatibility>;
-  fetchDlcNames(dlcAppIds: number[]): Promise<Map<number, string>>;
+  fetchDlcNames(dlcAppIds: number[], options?: StorefrontOptions): Promise<Map<number, string>>;
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
   getAppAnnouncements(
     appId: number,
@@ -65,6 +75,22 @@ const gameInfoCriteriaSchema = z
 
 const getGameInfoSchema = z.object({
   appIds: z.array(z.number()).min(1).max(10),
+  country: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .refine(isSteamStoreCountry, 'Country must be a two-letter ISO 3166-1 country code')
+    .transform((country): StorefrontOptions['country'] => country as StorefrontOptions['country'])
+    .default(DEFAULT_STORE_COUNTRY),
+  language: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .refine(isSteamLanguage, 'Language must use a supported Steam language code')
+    .transform(
+      (language): StorefrontOptions['language'] => language as StorefrontOptions['language']
+    )
+    .default(DEFAULT_STORE_LANGUAGE),
   includeStats: z.boolean().optional(),
   includeCurrentPlayers: z.boolean().optional(),
   criteria: gameInfoCriteriaSchema.optional(),
@@ -118,7 +144,7 @@ function generateInfoSummary(game: SteamGame, reviewStats?: ReviewStats | null):
     parts.push(`Steam: ${reviewStats.scoreText} (${reviewCount} reviews)`);
   }
 
-  if (game.isFree || game.priceRaw === 0) {
+  if (game.isFree) {
     parts.push('Free to play');
   } else if (game.priceFormatted) {
     parts.push(`Price: ${game.priceFormatted}`);
@@ -137,6 +163,10 @@ function generateInfoSummary(game: SteamGame, reviewStats?: ReviewStats | null):
   }
 
   return parts.join(' | ') || 'No summary available';
+}
+
+function hasStoreDetails(result: SteamGameInfo): result is SteamGame {
+  return 'name' in result;
 }
 
 /** Check whether a game satisfies every requested filter criterion. */
@@ -223,7 +253,7 @@ export const tools: Tool[] = [
   {
     name: 'get_game_info',
     description:
-      "Get detailed information about one or more Steam games by AppID. Returns game data, review statistics, and Valve's Steam Deck compatibility report. Steam Deck evidence includes the category, raw category code, and available test-result tokens; retrieval failures produce per-game warnings without removing base information. System requirements and DLC are optional. Supports filtering by review quality criteria.",
+      "Get detailed information about one or more Steam games by AppID for an optional Steam store country and language. Returns Steam's regional quote, request context, game data, review statistics, and Valve's Steam Deck compatibility report. Steam Deck evidence includes the category, raw category code, and available test-result tokens; retrieval failures produce per-game warnings without removing base information. System requirements and DLC are optional. Supports filtering by review quality criteria.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -233,6 +263,19 @@ export const tools: Tool[] = [
           description: 'Array of Steam AppIDs to fetch information for (supports batch queries)',
           minItems: 1,
           maxItems: 10,
+        },
+        country: {
+          type: 'string',
+          enum: [...STORE_COUNTRY_CODES],
+          default: DEFAULT_STORE_COUNTRY,
+          description: 'Two-letter ISO 3166-1 Steam store country code (default: us)',
+        },
+        language: {
+          type: 'string',
+          enum: [...STEAM_LANGUAGES],
+          default: DEFAULT_STORE_LANGUAGE,
+          description:
+            'Steam language code for localized Store content (default: english; use values such as german or schinese, not ISO codes such as de or zh)',
         },
         includeStats: {
           type: 'boolean',
@@ -472,7 +515,11 @@ export function createToolModule(steamClient: SteamSource) {
   /** Execute game information retrieval and enrichment. */
   async function executeGetGameInfo(args: unknown) {
     const validatedInput = getGameInfoSchema.parse(args);
-    const games = await steamClient.getAppDetails(validatedInput.appIds);
+    const gameInfo = await steamClient.getAppDetails(validatedInput.appIds, {
+      country: validatedInput.country,
+      language: validatedInput.language,
+    });
+    const games = gameInfo.filter(hasStoreDetails);
     const hasCriteria = Object.values(validatedInput.criteria ?? {}).some(
       (value) => value !== undefined
     );
@@ -523,7 +570,10 @@ export function createToolModule(steamClient: SteamSource) {
       }
 
       if (allDlcAppIds.length > 0) {
-        const dlcNames = await steamClient.fetchDlcNames(allDlcAppIds);
+        const dlcNames = await steamClient.fetchDlcNames(allDlcAppIds, {
+          country: validatedInput.country,
+          language: validatedInput.language,
+        });
         for (const game of gamesWithStats) {
           if (game.dlc && game.dlc.length > 0) {
             for (const dlc of game.dlc) {
@@ -572,6 +622,7 @@ export function createToolModule(steamClient: SteamSource) {
           return {
             ...game,
             warnings: [
+              ...(game.warnings ?? []),
               {
                 source: 'steam_deck_compatibility' as const,
                 message: `Steam Deck compatibility is unavailable for AppID ${game.appId}`,
@@ -583,11 +634,19 @@ export function createToolModule(steamClient: SteamSource) {
       })
     );
 
+    const results = hasCriteria
+      ? enrichedGames
+      : gameInfo.map((result) =>
+          hasStoreDetails(result)
+            ? (enrichedGames.find((game) => game.appId === result.appId) ?? result)
+            : result
+        );
+
     return {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify(enrichedGames, null, 2),
+          text: JSON.stringify(results, null, 2),
         },
       ],
     };

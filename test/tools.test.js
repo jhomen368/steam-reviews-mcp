@@ -58,6 +58,17 @@ test('publishes the single-or-batch search requirement', () => {
   ]);
 });
 
+test('publishes storefront country and Steam language inputs', () => {
+  const gameInfoTool = createToolModule({}).tools.find((tool) => tool.name === 'get_game_info');
+
+  assert.equal(gameInfoTool.inputSchema.properties.country.default, 'us');
+  assert.equal(gameInfoTool.inputSchema.properties.country.enum.includes('de'), true);
+  assert.equal(gameInfoTool.inputSchema.properties.country.enum.includes('zz'), false);
+  assert.equal(gameInfoTool.inputSchema.properties.language.default, 'english');
+  assert.equal(gameInfoTool.inputSchema.properties.language.enum.includes('german'), true);
+  assert.equal(gameInfoTool.inputSchema.properties.language.enum.includes('en'), false);
+});
+
 test('searches for a single Steam game', async () => {
   const toolModule = createToolModule({
     async searchGames(query, limit) {
@@ -160,6 +171,164 @@ test('returns processed game information', async () => {
       infoSummary: 'Free to play | Platforms: Windows, Linux',
     },
   ]);
+});
+
+test('requests US English game information by default', async () => {
+  let receivedOptions;
+  const toolModule = createToolModule({
+    async getAppDetails(_appIds, options) {
+      receivedOptions = options;
+      return [{ appId: 620, name: 'Portal 2' }];
+    },
+    async getDeckCompatibility() {
+      return noDeckResult;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620],
+    includeStats: false,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(receivedOptions, { country: 'us', language: 'english' });
+});
+
+test('requests game information for the shopper storefront', async () => {
+  let receivedOptions;
+  const toolModule = createToolModule({
+    async getAppDetails(_appIds, options) {
+      receivedOptions = options;
+      return [{ appId: 620, name: 'Portal 2' }];
+    },
+    async getDeckCompatibility() {
+      return noDeckResult;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620],
+    country: 'DE',
+    language: 'german',
+    includeStats: false,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(receivedOptions, { country: 'de', language: 'german' });
+});
+
+test('rejects invalid storefront inputs before requesting Steam', async () => {
+  let requestCount = 0;
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      requestCount += 1;
+      return [];
+    },
+  });
+
+  for (const input of [
+    { appIds: [620], country: 'd' },
+    { appIds: [620], country: 'zz' },
+    { appIds: [620], language: 'en' },
+    { appIds: [620], language: 'klingon' },
+  ]) {
+    const result = await toolModule.execute('get_game_info', input);
+    assert.equal(result.isError, true);
+  }
+  assert.equal(requestCount, 0);
+});
+
+test('requests DLC names from the same storefront', async () => {
+  let receivedOptions;
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      return [{ appId: 620, name: 'Portal 2', dlc: [{ appId: 201790, name: '' }] }];
+    },
+    async fetchDlcNames(_appIds, options) {
+      receivedOptions = options;
+      return new Map([[201790, 'Portal 2 - Soundtrack']]);
+    },
+    async getDeckCompatibility() {
+      return noDeckResult;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620],
+    country: 'de',
+    language: 'german',
+    includeStats: false,
+    includeDlc: true,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(receivedOptions, { country: 'de', language: 'german' });
+});
+
+test('does not describe a zero regional quote as a free game', async () => {
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      return [
+        {
+          appId: 620,
+          name: 'Portal 2',
+          isFree: false,
+          priceRaw: 0,
+          priceFormatted: '$0.00',
+        },
+      ];
+    },
+    async getDeckCompatibility() {
+      return noDeckResult;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620],
+    includeStats: false,
+  });
+
+  assert.equal(JSON.parse(result.content[0].text)[0].infoSummary, 'Price: $0.00');
+});
+
+test('does not enrich unavailable Steam Store information', async () => {
+  let enrichmentRequests = 0;
+  const unavailable = {
+    appId: 999,
+    storefront: {
+      country: 'de',
+      language: 'german',
+      languageStatus: 'requested_not_verified',
+      priceStatus: 'unavailable',
+    },
+    warnings: [
+      {
+        source: 'steam_store',
+        message: 'Steam Store information is unavailable for AppID 999',
+      },
+    ],
+  };
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      return [unavailable];
+    },
+    async getReviewSummary() {
+      enrichmentRequests += 1;
+    },
+    async getDeckCompatibility() {
+      enrichmentRequests += 1;
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [999],
+    country: 'de',
+    language: 'german',
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.equal(enrichmentRequests, 0);
+  assert.deepEqual(JSON.parse(result.content[0].text), [unavailable]);
 });
 
 test('treats an all-default criteria object as no game filter', async () => {
@@ -274,6 +443,44 @@ test('keeps base game information when Steam Deck evidence is unavailable', asyn
     {
       source: 'steam_deck_compatibility',
       message: 'Steam Deck compatibility is unavailable for AppID 730',
+    },
+  ]);
+});
+
+test('preserves Steam Store warnings when Deck evidence is unavailable', async () => {
+  const toolModule = createToolModule({
+    async getAppDetails() {
+      return [
+        {
+          appId: 620,
+          name: 'Portal 2',
+          warnings: [
+            {
+              source: 'steam_store',
+              message: 'Steam returned a malformed regional quote for AppID 620',
+            },
+          ],
+        },
+      ];
+    },
+    async getDeckCompatibility() {
+      throw new Error('Deck endpoint unavailable');
+    },
+  });
+
+  const result = await toolModule.execute('get_game_info', {
+    appIds: [620],
+    includeStats: false,
+  });
+
+  assert.deepEqual(JSON.parse(result.content[0].text)[0].warnings, [
+    {
+      source: 'steam_store',
+      message: 'Steam returned a malformed regional quote for AppID 620',
+    },
+    {
+      source: 'steam_deck_compatibility',
+      message: 'Steam Deck compatibility is unavailable for AppID 620',
     },
   ]);
 });
