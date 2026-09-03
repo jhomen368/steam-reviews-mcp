@@ -14,7 +14,7 @@ import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
-import { DEFAULT_STOREFRONT } from './storefront.js';
+import { DEFAULT_STOREFRONT, steamLanguageForId } from './storefront.js';
 import type { StorefrontOptions } from './storefront.js';
 import type {
   ServerConfig,
@@ -31,6 +31,7 @@ import type {
   SteamAppAnnouncement,
   SteamAppNewsResponse,
   SteamDeckCompatibility,
+  SteamSupportedLanguage,
 } from '../types.js';
 
 /**
@@ -434,6 +435,89 @@ export class SteamAPIClient {
     );
   }
 
+  /** Retrieve structured language declarations from Steam's public Store service. */
+  async getStructuredLanguageSupport(
+    appIds: number[],
+    options: StorefrontOptions = DEFAULT_STOREFRONT
+  ): Promise<Map<number, SteamSupportedLanguage[]>> {
+    const requestedAppIds = [...new Set(appIds)].sort((left, right) => left - right);
+    const input = {
+      ids: requestedAppIds.map((appid) => ({ appid })),
+      context: {
+        language: options.language,
+        country_code: options.country.toUpperCase(),
+      },
+      data_request: { include_supported_languages: true },
+    };
+    const params = new URLSearchParams({ input_json: JSON.stringify(input) });
+    const apiUrl = `https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?${params.toString()}`;
+    const cacheKey = `store_languages_${requestedAppIds.join('_')}_${options.country}_${options.language}`;
+    const response = await this.get<unknown>(apiUrl, cacheKey, this.config.cacheTTL.gameInfo);
+
+    if (!response || typeof response !== 'object') {
+      throw new Error('Malformed Steam structured language response');
+    }
+    const envelope = (response as Record<string, unknown>).response;
+    if (!envelope || typeof envelope !== 'object') {
+      throw new Error('Malformed Steam structured language response');
+    }
+    const storeItems = (envelope as Record<string, unknown>).store_items;
+    if (!Array.isArray(storeItems)) {
+      throw new Error('Malformed Steam structured language response');
+    }
+
+    const requestedAppIdSet = new Set(requestedAppIds);
+    const languageSupport = new Map<number, SteamSupportedLanguage[]>();
+    for (const rawItem of storeItems) {
+      if (!rawItem || typeof rawItem !== 'object') continue;
+      const item = rawItem as Record<string, unknown>;
+      if (
+        !Number.isInteger(item.appid) ||
+        !requestedAppIdSet.has(item.appid as number) ||
+        item.success !== 1 ||
+        !Array.isArray(item.supported_languages)
+      ) {
+        continue;
+      }
+
+      const languages: SteamSupportedLanguage[] = [];
+      let malformed = false;
+      for (const rawLanguage of item.supported_languages) {
+        if (!rawLanguage || typeof rawLanguage !== 'object') {
+          malformed = true;
+          break;
+        }
+        const language = rawLanguage as Record<string, unknown>;
+        if (
+          !Number.isInteger(language.elanguage) ||
+          !Number.isInteger(language.eadditionallanguage) ||
+          typeof language.supported !== 'boolean' ||
+          typeof language.full_audio !== 'boolean' ||
+          typeof language.subtitles !== 'boolean'
+        ) {
+          malformed = true;
+          break;
+        }
+
+        const languageId = language.elanguage as number;
+        const languageCode = steamLanguageForId(languageId);
+        languages.push({
+          ...(languageCode ? { languageCode } : {}),
+          languageId,
+          additionalLanguageId: language.eadditionallanguage as number,
+          supported: language.supported,
+          fullAudio: language.full_audio,
+          subtitles: language.subtitles,
+        });
+      }
+      if (!malformed) {
+        languageSupport.set(item.appid as number, languages);
+      }
+    }
+
+    return languageSupport;
+  }
+
   /** Retrieve Valve's Steam Deck compatibility report for one app. */
   async getDeckCompatibility(appId: number): Promise<SteamDeckCompatibility> {
     const malformedResponse = new Error(
@@ -544,6 +628,33 @@ export class SteamAPIClient {
         : data.is_free
           ? 'free'
           : 'unavailable';
+    const categoryItems = Array.isArray(data.categories)
+      ? data.categories.flatMap((category) =>
+          category && Number.isInteger(category.id) && typeof category.description === 'string'
+            ? [{ id: category.id, label: category.description }]
+            : []
+        )
+      : [];
+    const accountNoticeMalformed =
+      data.ext_user_account_notice !== undefined &&
+      typeof data.ext_user_account_notice !== 'string';
+    const drmNoticeMalformed = data.drm_notice !== undefined && typeof data.drm_notice !== 'string';
+    const rawLanguageDeclarationMalformed =
+      data.supported_languages !== undefined && typeof data.supported_languages !== 'string';
+    const categoriesMalformed =
+      data.categories !== undefined &&
+      (!Array.isArray(data.categories) || categoryItems.length !== data.categories.length);
+    const malformedDeclarations = [
+      accountNoticeMalformed ? 'third-party account notice' : undefined,
+      drmNoticeMalformed ? 'DRM or launcher notice' : undefined,
+      rawLanguageDeclarationMalformed ? 'supported languages' : undefined,
+      categoriesMalformed ? 'categories' : undefined,
+    ].filter((field): field is string => field !== undefined);
+    const accountNotice =
+      typeof data.ext_user_account_notice === 'string' ? data.ext_user_account_notice : null;
+    const drmNotice = typeof data.drm_notice === 'string' ? data.drm_notice : null;
+    const rawLanguageDeclaration =
+      typeof data.supported_languages === 'string' ? data.supported_languages : null;
     const game: SteamGame = {
       appId: data.steam_appid,
       name: data.name,
@@ -569,10 +680,56 @@ export class SteamAPIClient {
       metacriticScore: data.metacritic?.score,
       genres: data.genres?.map((g) => g.description),
       tags: data.genres?.map((g) => g.description), // Use genres as tags for now
+      purchaseNotices: {
+        source: 'steam_store_declaration',
+        thirdPartyAccount: {
+          status: accountNoticeMalformed
+            ? 'malformed'
+            : accountNotice === null
+              ? 'not_supplied'
+              : 'supplied',
+          rawText: accountNotice,
+        },
+        drmOrLauncher: {
+          status: drmNoticeMalformed
+            ? 'malformed'
+            : drmNotice === null
+              ? 'not_supplied'
+              : 'supplied',
+          rawText: drmNotice,
+        },
+        absenceMeaning: 'not_supplied_is_not_evidence_of_absence',
+      },
+      languageSupport: {
+        source: 'steam_store_declaration',
+        status: rawLanguageDeclaration === null ? 'unavailable' : 'partial_raw_only',
+        rawDeclaration: rawLanguageDeclaration,
+        languages: [],
+      },
+      storeCategories: {
+        source: 'steam_store_declaration',
+        status: categoriesMalformed
+          ? 'malformed'
+          : Array.isArray(data.categories)
+            ? 'supplied'
+            : 'not_supplied',
+        independentlyTested: false,
+        items: categoryItems,
+      },
     };
+
+    if (malformedDeclarations.length > 0) {
+      game.warnings = [
+        {
+          source: 'steam_store',
+          message: `Steam returned malformed Store declarations for AppID ${data.steam_appid}: ${malformedDeclarations.join(', ')}`,
+        },
+      ];
+    }
 
     if (regionalQuote && !hasValidRegionalQuote) {
       game.warnings = [
+        ...(game.warnings ?? []),
         {
           source: 'steam_store',
           message: `Steam returned a malformed regional quote for AppID ${data.steam_appid}`,

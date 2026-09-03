@@ -21,6 +21,7 @@ import type {
   SteamDeckCompatibility,
   SteamGame,
   SteamGameInfo,
+  SteamSupportedLanguage,
 } from './types.js';
 
 type ReviewOptions = Partial<FetchReviewsInput> & {
@@ -35,6 +36,10 @@ interface SteamSource {
   getReviewSummary(appId: number): Promise<ReviewStats | null>;
   getCurrentPlayers(appId: number): Promise<number>;
   getDeckCompatibility(appId: number): Promise<SteamDeckCompatibility>;
+  getStructuredLanguageSupport(
+    appIds: number[],
+    options?: StorefrontOptions
+  ): Promise<Map<number, SteamSupportedLanguage[]>>;
   fetchDlcNames(dlcAppIds: number[], options?: StorefrontOptions): Promise<Map<number, string>>;
   getAppReviews(appId: number, options?: ReviewOptions): Promise<PaginatedReviewsResponse>;
   getAppAnnouncements(
@@ -253,7 +258,7 @@ export const tools: Tool[] = [
   {
     name: 'get_game_info',
     description:
-      "Get detailed information about one or more Steam games by AppID for an optional Steam store country and language. Returns Steam's regional quote, request context, game data, review statistics, and Valve's Steam Deck compatibility report. Steam Deck evidence includes the category, raw category code, and available test-result tokens; retrieval failures produce per-game warnings without removing base information. System requirements and DLC are optional. Supports filtering by review quality criteria.",
+      "Get detailed information about one or more Steam games by AppID for an optional Steam store country and language. Returns Steam's regional quote, request context, raw third-party account and DRM or launcher notices, supported languages, declared Store categories, review statistics, and Valve's Steam Deck compatibility report. Missing notices do not prove that a requirement is absent, and the server does not infer launcher identity, online-only behavior, activation limits, anti-cheat, or absence of DRM. Store categories are declarations, not independently tested behavior. Optional enrichment failures produce per-game warnings without removing base information. System requirements and DLC are optional. Supports filtering by review quality criteria.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -520,6 +525,40 @@ export function createToolModule(steamClient: SteamSource) {
       language: validatedInput.language,
     });
     const games = gameInfo.filter(hasStoreDetails);
+    const gamesWithLanguageSupport = games.filter((game) => game.languageSupport !== undefined);
+    if (gamesWithLanguageSupport.length > 0) {
+      let structuredLanguages: Map<number, SteamSupportedLanguage[]> | undefined;
+      try {
+        structuredLanguages = await steamClient.getStructuredLanguageSupport(
+          gamesWithLanguageSupport.map((game) => game.appId),
+          {
+            country: validatedInput.country,
+            language: validatedInput.language,
+          }
+        );
+      } catch (error) {
+        console.error('Failed to get structured Steam language support:', error);
+      }
+
+      for (const game of gamesWithLanguageSupport) {
+        const languages = structuredLanguages?.get(game.appId);
+        if (languages !== undefined) {
+          game.languageSupport = {
+            ...game.languageSupport!,
+            status: 'structured',
+            languages,
+          };
+        } else {
+          game.warnings = [
+            ...(game.warnings ?? []),
+            {
+              source: 'steam_language_support',
+              message: `Structured Steam language support is unavailable for AppID ${game.appId}; the raw declaration may be partial`,
+            },
+          ];
+        }
+      }
+    }
     const hasCriteria = Object.values(validatedInput.criteria ?? {}).some(
       (value) => value !== undefined
     );

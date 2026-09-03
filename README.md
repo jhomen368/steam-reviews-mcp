@@ -33,7 +33,7 @@
 | Tool | Purpose | Key Features |
 |------|---------|--------------|
 | **search_steam_games** | Search for games | Single/batch search, AppID lookup, price info |
-| **get_game_info** | Get game details | Batch lookup, criteria filtering, system requirements, DLC |
+| **get_game_info** | Get game details | Regional pricing, purchase notices, languages, Store features, Deck compatibility |
 | **fetch_reviews** | Fetch user reviews | Advanced filters, pagination, time-bounded queries |
 | **analyze_reviews** | Analyze sentiment | NLP analysis, topic drill-down, example quotes with links |
 | **fetch_app_announcements** | Read official app announcements | Full available Steam markup, publication details, backward pagination |
@@ -165,6 +165,23 @@ Steam does not report which language it actually served and may silently fall ba
 translation is missing. For that reason, `storefront.languageStatus` is
 `requested_not_verified`: it records the request context without claiming that returned text was
 translated into the requested language.
+
+`purchaseNotices` preserves Steam's raw third-party account and DRM or launcher notices. Each
+notice has a `supplied`, `not_supplied`, or `malformed` status. `not_supplied` means only that Steam
+omitted the notice; it does not prove that the game has no account requirement, launcher,
+online-only behavior, activation limit, anti-cheat, or DRM. The server does not infer those claims
+from notice text.
+
+`languageSupport` contains structured language, full-audio, and subtitle declarations when Steam's
+public Store service returns them. It also retains `rawDeclaration` from app details. If structured
+retrieval fails, the status is `partial_raw_only` when that raw declaration exists, or `unavailable`
+when it does not, and the game includes a `steam_language_support` warning.
+
+`storeCategories.items` preserves Steam's category IDs and localized labels for declarations such
+as controller support, co-op, multiplayer, achievements, and Steam Cloud. Unknown category IDs are
+retained. These Store declarations are separate from tags and are not independently tested
+behavior. When `includeRequirements` is true, Steam's localized minimum and recommended PC text is
+returned without interpretation.
 
 Omit `criteria` when no filtering is needed. Zero and `false` criteria values are inactive;
 use `requireFree: true` to return only free games.

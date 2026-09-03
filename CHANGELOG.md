@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Official app announcements**: Added `fetch_app_announcements` with full available Steam markup, publication details, backward pagination, and explicit body status
 - **Steam Deck compatibility**: Added Valve's compatibility category, raw category code, and available test-result tokens to `get_game_info`, with warnings when the optional evidence is unavailable
 - **Regional game information**: Added validated store country and Steam language requests, regional quote context, explicit unavailable pricing states, and locale-isolated caching to `get_game_info`
+- **Purchase requirements and Store features**: Added raw account and DRM notices, structured and fallback language declarations, localized Store category IDs and labels, and isolated enrichment warnings to `get_game_info`
 
 ## [1.0.3] - 2026-08-29
 
