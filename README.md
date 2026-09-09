@@ -399,6 +399,10 @@ PORT=8086                             # HTTP server port
 
 ### Connection Issues
 
+The stdio server reserves stdout for MCP messages and sends its diagnostics to stderr.
+It suppresses dotenv status and debug output before loading tool dependencies; no
+`DOTENV_CONFIG_QUIET` setting is required in your MCP client configuration.
+
 - Verify Steam Store API is accessible (no firewall blocks)
 - Check rate limiting if receiving 429 errors
 - Review logs for timeout errors

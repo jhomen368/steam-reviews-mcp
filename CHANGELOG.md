@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Regional game information**: Added validated store country and Steam language requests, regional quote context, explicit unavailable pricing states, and locale-isolated caching to `get_game_info`
 - **Purchase requirements and Store features**: Added raw account and DRM notices, structured and fallback language declarations, localized Store category IDs and labels, and isolated enrichment warnings to `get_game_info`
 
+### Fixed
+
+- Suppressed dotenv status and debug output before loading tool dependencies so the default stdio server emits only MCP messages on stdout. Added subprocess regression coverage for initialization and tool listing without a caller-supplied quiet setting.
+
 ## [1.0.3] - 2026-08-29
 
 ### Fixed
