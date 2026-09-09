@@ -475,3 +475,86 @@ export type ReviewTypeFilter = 'all' | 'positive' | 'negative';
  * Purchase type filter
  */
 export type PurchaseTypeFilter = 'all' | 'steam' | 'non_steam_purchase';
+
+/** Identifiers from an app-scoped Steam Community discussion URL. */
+export interface DiscussionIdentifier {
+  appId: number;
+  forumId: string;
+  threadId: string;
+}
+
+export interface SearchDiscussionsInput {
+  appId: number;
+  query: string;
+  sort?: 'relevance' | 'time';
+  page?: number;
+}
+
+export interface FetchDiscussionThreadInput extends DiscussionIdentifier {
+  page?: number;
+}
+
+export interface CommunityPagination {
+  page: number;
+  pagesFetched: number;
+  maxPages: 1;
+  maxItems: 50;
+  totalItems: number | null;
+  hasMore: boolean | null;
+  nextPage: number | null;
+  complete: boolean;
+}
+
+export interface CommunityResponse {
+  appId: number;
+  source: 'steam_community_discussions';
+  experimental: true;
+  evidenceNotice: string;
+  steamUrl: string;
+  status: 'available' | 'partial' | 'blocked' | 'unavailable';
+  reason?: string;
+  pagination: CommunityPagination;
+}
+
+export interface DiscussionSearchMatch {
+  postId: string | null;
+  steamUrl: string;
+  authorLabel: string | null;
+  timestamp: number | null;
+  timestampLabel: string | null;
+  snippet: string;
+  truncated: boolean;
+}
+
+export interface DiscussionSearchResponse extends CommunityResponse {
+  query: string;
+  sort: 'relevance' | 'time';
+  threads: {
+    identifier: DiscussionIdentifier;
+    steamUrl: string;
+    title: string | null;
+    replyCount: number | null;
+    matchingPostsObserved: number;
+    matches: DiscussionSearchMatch[];
+  }[];
+}
+
+export interface DiscussionPost {
+  id: string;
+  steamUrl: string;
+  authorLabel: string | null;
+  timestamp: number | null;
+  timestampLabel: string | null;
+  text: string | null;
+  links: { text: string; url: string }[];
+  steamMarkers: { kind: 'developer' | 'moderator'; label: string }[];
+  status: 'available' | 'deleted' | 'unavailable';
+  truncated: boolean;
+}
+
+export interface DiscussionThreadResponse extends CommunityResponse {
+  identifier: DiscussionIdentifier;
+  title: string | null;
+  opener: DiscussionPost | null;
+  replies: DiscussionPost[];
+}
