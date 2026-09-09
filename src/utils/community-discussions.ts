@@ -259,7 +259,7 @@ export function parseDiscussionThread(
   });
 
   const initialization = new RegExp(
-    `InitializeCommentThread\\(\\s*"ForumTopic"\\s*,\\s*"ForumTopic_[0-9]+_[0-9]+_${threadId}"\\s*,\\s*(\\{[\\s\\S]*?\\})\\s*,\\s*"https://steamcommunity\\.com/comment/ForumTopic/"`
+    `InitializeCommentThread\\(\\s*"ForumTopic"\\s*,\\s*"ForumTopic_[0-9]+_[0-9]+_${threadId}"\\s*,\\s*(\\{[\\s\\S]*?\\})\\s*,\\s*(['"])https://steamcommunity\\.com/comment/ForumTopic/\\2`
   );
   // Steam renders replies but builds page links in JavaScript. Read its JSON data only.
   const json = $('script')

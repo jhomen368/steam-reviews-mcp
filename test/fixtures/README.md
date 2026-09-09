@@ -5,6 +5,11 @@ They retain selectors observed on anonymously readable Steam pages. Text, counts
 are edited to keep the examples small. In particular, the two-reply page size is synthetic;
 the parser reads Steam's embedded page size rather than assuming a fixed value.
 
+`community-thread-page-1.html` preserves the single-quoted callback URL observed in the
+live `InitializeCommentThread` call. The other thread fixtures use double quotes so tests
+cover both JavaScript string delimiters. Requiring double quotes originally caused live
+thread requests to return `pagination_unavailable` despite successfully reading posts.
+
 Public sources inspected during implementation:
 
 - Search, duplicate matching posts, and paging: https://steamcommunity.com/app/620/discussions/search/?q=crash&sort=time

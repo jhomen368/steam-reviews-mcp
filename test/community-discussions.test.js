@@ -88,6 +88,11 @@ test('retrieves bounded thread pages from search identifiers, preserving links a
   const search = await client.searchDiscussions({ appId: 620, query: 'crash' });
   const identifier = search.threads[0].identifier;
   const first = await client.getDiscussionThread(identifier);
+  assert.equal(
+    first.pagination.nextPage,
+    2,
+    'parse the single-quoted callback URL used by live Steam'
+  );
   const second = await client.getDiscussionThread({
     ...identifier,
     page: first.pagination.nextPage,
