@@ -3,6 +3,7 @@
 [![npm](https://img.shields.io/npm/v/@jhomen368/steam-reviews-mcp)](https://www.npmjs.com/package/@jhomen368/steam-reviews-mcp)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate?hosted_button_id=PBRD7FXKSKAD2)
 
 Give your AI assistant access to Steam reviews, game details, patch notes, and
 community discussions. This [MCP](https://modelcontextprotocol.io) server reads
