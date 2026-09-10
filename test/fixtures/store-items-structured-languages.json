@@ -27,6 +27,27 @@
             "subtitles": true
           },
           {
+            "elanguage": 25,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": false,
+            "subtitles": true
+          },
+          {
+            "elanguage": 26,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": true,
+            "subtitles": true
+          },
+          {
+            "elanguage": 27,
+            "eadditionallanguage": -1,
+            "supported": true,
+            "full_audio": true,
+            "subtitles": true
+          },
+          {
             "elanguage": 28,
             "eadditionallanguage": -1,
             "supported": true,
