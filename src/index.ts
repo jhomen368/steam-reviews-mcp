@@ -87,6 +87,7 @@ async function runHttp(port: number): Promise<void> {
   const express = (await import('express')).default;
 
   const app = express();
+  const transports = new Map<string, InstanceType<typeof SSEServerTransport>>();
   app.use(express.json());
 
   app.get('/health', (_req, res) => {
@@ -99,20 +100,27 @@ async function runHttp(port: number): Promise<void> {
     });
   });
 
-  app.get('/mcp', async (req, res) => {
+  app.get('/mcp', async (_req, res) => {
     console.error('New MCP SSE connection established');
 
     const transport = new SSEServerTransport('/message', res);
     const server = createServer();
-    await server.connect(transport);
-
-    req.on('close', () => {
+    transports.set(transport.sessionId, transport);
+    res.on('close', () => {
+      transports.delete(transport.sessionId);
       console.error('MCP SSE connection closed');
     });
+    await server.connect(transport);
   });
 
-  app.post('/message', async (_req, res) => {
-    res.status(200).end();
+  app.post('/message', async (req, res) => {
+    const sessionId = req.query.sessionId;
+    const transport = typeof sessionId === 'string' ? transports.get(sessionId) : undefined;
+    if (!transport) {
+      res.status(400).json({ error: 'Missing or unknown SSE sessionId' });
+      return;
+    }
+    await transport.handlePostMessage(req, res, req.body);
   });
 
   app.listen(port, () => {
