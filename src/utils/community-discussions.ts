@@ -15,7 +15,7 @@ const pageSchema = z.number().int().min(1).max(10000).default(1);
 
 export const searchDiscussionsSchema = z.object({
   appId: appIdSchema,
-  query: z.string().trim().min(1).max(256),
+  query: z.string().max(256).trim().min(1),
   sort: z.enum(['relevance', 'time']).default('relevance'),
   page: pageSchema,
 });

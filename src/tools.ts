@@ -520,7 +520,8 @@ export const tools: Tool[] = [
         },
         query: {
           type: 'string',
-          description: 'Non-blank search query, trimmed before searching; maximum 256 characters',
+          description:
+            'Non-blank search query; maximum 256 input characters including surrounding whitespace. Trimmed before searching.',
           minLength: 1,
           maxLength: 256,
           pattern: '\\S',

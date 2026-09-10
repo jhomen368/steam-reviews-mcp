@@ -298,10 +298,10 @@ if (search.pagination.nextPage !== null) {
 }
 ```
 
-`search_app_discussions` requires `appId` and a non-blank `query` of at most 256 characters after
-trimming. `sort` accepts `relevance` or `time` and defaults to `relevance`. Both tools accept one
-integer `page` from 1 through 10,000, defaulting to 1. AppIDs must be integers from 1 through
-4,294,967,295.
+`search_app_discussions` requires `appId` and a non-blank `query` of at most 256 input characters,
+including surrounding whitespace. The query is trimmed before searching. `sort` accepts
+`relevance` or `time` and defaults to `relevance`. Both tools accept one integer `page` from 1
+through 10,000, defaulting to 1. AppIDs must be integers from 1 through 4,294,967,295.
 
 `fetch_discussion_thread` requires the returned `identifier` fields `appId`, `forumId`, and
 `threadId`. Keep forum and thread IDs as decimal strings, not JavaScript numbers. `forumId`

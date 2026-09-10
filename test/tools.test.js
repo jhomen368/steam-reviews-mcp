@@ -676,6 +676,33 @@ test('searches app discussions with trimmed query and default sort and page', as
   assert.deepEqual(JSON.parse(result.content[0].text), response);
 });
 
+test('counts surrounding whitespace toward the discussion query input limit', async () => {
+  const received = [];
+  const toolModule = createToolModule({
+    async searchDiscussions(input) {
+      received.push(input);
+      return { threads: [] };
+    },
+  });
+
+  for (const query of [` ${'x'.repeat(255)} `, ` ${'x'.repeat(256)} `, ' \n\t']) {
+    const result = await toolModule.execute('search_app_discussions', { appId: 620, query });
+    assert.deepEqual(received, [], 'invalid query must not reach the source');
+    assert.equal(result.isError, true);
+    assert.equal(JSON.parse(result.content[0].text).message, 'Validation error');
+  }
+
+  const result = await toolModule.execute('search_app_discussions', {
+    appId: 620,
+    query: ` ${'x'.repeat(254)} `,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(received, [
+    { appId: 620, query: 'x'.repeat(254), sort: 'relevance', page: 1 },
+  ]);
+});
+
 test('fetches a discussion identifier from page one by default', async () => {
   const received = [];
   const identifier = { appId: 620, forumId: '0', threadId: '12345678901234567890' };
