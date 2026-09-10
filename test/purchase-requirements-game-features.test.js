@@ -21,18 +21,22 @@ const config = {
   logLevel: 'error',
 };
 
+/** Read a saved Store response without contacting Steam. */
 async function loadFixture(name) {
   const contents = await readFile(new URL(`fixtures/${name}.json`, import.meta.url), 'utf8');
   return JSON.parse(contents);
 }
 
+/** Replay successive responses for app details and optional enrichment. */
 class FixtureSteamClient extends SteamAPIClient {
+  /** Keep the response queue and request history local to each test. */
   constructor(responses) {
     super(config);
     this.responses = responses;
     this.requests = [];
   }
 
+  /** Record the request and return the next response or simulated failure. */
   async get(url, cacheKey, cacheTTL) {
     this.requests.push({ url, cacheKey, cacheTTL });
     const response = this.responses.shift();
@@ -197,7 +201,31 @@ test('retrieves structured language support through the shared request path', as
       subtitles: true,
     },
     {
-      languageCode: 'indonesian',
+      languageCode: 'arabic',
+      languageId: 25,
+      additionalLanguageId: -1,
+      supported: true,
+      fullAudio: false,
+      subtitles: true,
+    },
+    {
+      languageCode: 'ukrainian',
+      languageId: 26,
+      additionalLanguageId: -1,
+      supported: true,
+      fullAudio: true,
+      subtitles: true,
+    },
+    {
+      languageCode: 'latam',
+      languageId: 27,
+      additionalLanguageId: -1,
+      supported: true,
+      fullAudio: true,
+      subtitles: true,
+    },
+    {
+      languageCode: 'vietnamese',
       languageId: 28,
       additionalLanguageId: -1,
       supported: true,

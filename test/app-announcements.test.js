@@ -20,18 +20,22 @@ const config = {
   logLevel: 'error',
 };
 
+/** Read a saved announcement response without contacting Steam. */
 async function loadFixture(name) {
   const contents = await readFile(new URL(`fixtures/${name}.json`, import.meta.url), 'utf8');
   return JSON.parse(contents);
 }
 
+/** Replay an announcement feed while respecting the requested count. */
 class FixtureSteamClient extends SteamAPIClient {
+  /** Keep the response and request history local to each test. */
   constructor(response) {
     super(config);
     this.response = response;
     this.requests = [];
   }
 
+  /** Record the request and return the requested portion of the fixture. */
   async get(url, cacheKey, cacheTTL) {
     this.requests.push({ url, cacheKey, cacheTTL });
     const response = structuredClone(this.response);
@@ -127,7 +131,21 @@ test('rejects a malformed announcement cursor before requesting Steam', async ()
     JSON.stringify({ before: 1700000200, seenIds: ['1003'] })
   ).toString('base64url')}!!!`;
 
-  for (const cursor of ['not-a-valid-cursor', alteredCursor]) {
+  const invalidShapes = [
+    null,
+    {},
+    { before: -1, seenIds: ['1003'] },
+    { before: 4294967296, seenIds: ['1003'] },
+    { before: 1.5, seenIds: ['1003'] },
+    { before: '1700000200', seenIds: ['1003'] },
+    { before: 1700000200, seenIds: [] },
+    { before: 1700000200, seenIds: [1003] },
+    { before: 1700000200, seenIds: [''] },
+    { before: 1700000200, seenIds: ['1'.repeat(65)] },
+    { before: 1700000200, seenIds: Array(101).fill('1003') },
+  ].map((value) => Buffer.from(JSON.stringify(value)).toString('base64url'));
+
+  for (const cursor of ['not-a-valid-cursor', alteredCursor, ...invalidShapes]) {
     await assert.rejects(
       client.getAppAnnouncements(620, { cursor }),
       /Invalid app announcement cursor/

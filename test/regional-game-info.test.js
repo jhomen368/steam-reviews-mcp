@@ -21,18 +21,22 @@ const config = {
   logLevel: 'error',
 };
 
+/** Read a saved regional Store response without contacting Steam. */
 async function loadFixture(name) {
   const contents = await readFile(new URL(`fixtures/${name}.json`, import.meta.url), 'utf8');
   return JSON.parse(contents);
 }
 
+/** Replay app details and record requests for storefront and cache assertions. */
 class FixtureSteamClient extends SteamAPIClient {
+  /** Keep the response and request history local to each test. */
   constructor(response) {
     super(config);
     this.response = response;
     this.requests = [];
   }
 
+  /** Return a fresh copy so tests cannot mutate the saved response. */
   async get(url, cacheKey, cacheTTL) {
     this.requests.push({ url, cacheKey, cacheTTL });
     return structuredClone(this.response);

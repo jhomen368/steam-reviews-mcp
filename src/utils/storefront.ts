@@ -318,10 +318,10 @@ const steamLanguageById: Readonly<Record<number, SteamLanguage>> = {
   22: 'brazilian',
   23: 'bulgarian',
   24: 'greek',
-  25: 'ukrainian',
-  26: 'latam',
-  27: 'vietnamese',
-  28: 'indonesian',
+  25: 'arabic',
+  26: 'ukrainian',
+  27: 'latam',
+  28: 'vietnamese',
 };
 
 /** Check whether a value is an ISO 3166-1 alpha-2 country code. */

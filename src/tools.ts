@@ -180,6 +180,7 @@ function generateInfoSummary(game: SteamGame, reviewStats?: ReviewStats | null):
   return parts.join(' | ') || 'No summary available';
 }
 
+/** Distinguish normalized Store details from an unavailable app result. */
 function hasStoreDetails(result: SteamGameInfo): result is SteamGame {
   return 'name' in result;
 }

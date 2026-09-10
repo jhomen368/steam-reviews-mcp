@@ -11,6 +11,7 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
+import { z } from 'zod';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
@@ -38,6 +39,7 @@ import type {
   SteamAppNewsResponse,
   SteamDeckCompatibility,
   SteamSupportedLanguage,
+  SteamPurchaseNotices,
   SearchDiscussionsInput,
   DiscussionSearchResponse,
   DiscussionThreadResponse,
@@ -49,6 +51,20 @@ import type {
  * User agent string for Steam API requests
  */
 const USER_AGENT = 'steam-reviews-mcp/0.1.0';
+
+const appAnnouncementCursorSchema = z.object({
+  before: z.number().int().min(0).max(4294967295),
+  seenIds: z.array(z.string().min(1).max(64)).min(1).max(100),
+});
+
+/** Preserve a Store notice and distinguish omitted text from malformed data. */
+function normalizePurchaseNotice(value: unknown): SteamPurchaseNotices['thirdPartyAccount'] {
+  if (typeof value === 'string') return { status: 'supplied', rawText: value };
+  return {
+    status: value === undefined ? 'not_supplied' : 'malformed',
+    rawText: null,
+  };
+}
 
 /**
  * Steam API Client
@@ -466,6 +482,7 @@ export class SteamAPIClient {
     return Promise.all(fetchPromises);
   }
 
+  /** Retain the requested AppID and storefront when Steam has no usable details. */
   private unavailableAppDetails(appId: number, storefront: StorefrontOptions): SteamGameInfo {
     return {
       appId,
@@ -483,6 +500,7 @@ export class SteamAPIClient {
     };
   }
 
+  /** Fetch app details with a cache entry specific to the requested storefront. */
   private async getStoreAppDetails(
     appId: number,
     storefront: StorefrontOptions
@@ -502,6 +520,7 @@ export class SteamAPIClient {
     return response[String(appId)];
   }
 
+  /** Require identifying fields for the requested app before normalizing details. */
   private hasUsableAppDetails(
     data: SteamAppDetailsResponse['data'] | undefined,
     requestedAppId: number
@@ -717,24 +736,19 @@ export class SteamAPIClient {
             : []
         )
       : [];
-    const accountNoticeMalformed =
-      data.ext_user_account_notice !== undefined &&
-      typeof data.ext_user_account_notice !== 'string';
-    const drmNoticeMalformed = data.drm_notice !== undefined && typeof data.drm_notice !== 'string';
+    const accountNotice = normalizePurchaseNotice(data.ext_user_account_notice);
+    const drmNotice = normalizePurchaseNotice(data.drm_notice);
     const rawLanguageDeclarationMalformed =
       data.supported_languages !== undefined && typeof data.supported_languages !== 'string';
     const categoriesMalformed =
       data.categories !== undefined &&
       (!Array.isArray(data.categories) || categoryItems.length !== data.categories.length);
     const malformedDeclarations = [
-      accountNoticeMalformed ? 'third-party account notice' : undefined,
-      drmNoticeMalformed ? 'DRM or launcher notice' : undefined,
+      accountNotice.status === 'malformed' ? 'third-party account notice' : undefined,
+      drmNotice.status === 'malformed' ? 'DRM or launcher notice' : undefined,
       rawLanguageDeclarationMalformed ? 'supported languages' : undefined,
       categoriesMalformed ? 'categories' : undefined,
     ].filter((field): field is string => field !== undefined);
-    const accountNotice =
-      typeof data.ext_user_account_notice === 'string' ? data.ext_user_account_notice : null;
-    const drmNotice = typeof data.drm_notice === 'string' ? data.drm_notice : null;
     const rawLanguageDeclaration =
       typeof data.supported_languages === 'string' ? data.supported_languages : null;
     const game: SteamGame = {
@@ -764,22 +778,8 @@ export class SteamAPIClient {
       tags: data.genres?.map((g) => g.description), // Use genres as tags for now
       purchaseNotices: {
         source: 'steam_store_declaration',
-        thirdPartyAccount: {
-          status: accountNoticeMalformed
-            ? 'malformed'
-            : accountNotice === null
-              ? 'not_supplied'
-              : 'supplied',
-          rawText: accountNotice,
-        },
-        drmOrLauncher: {
-          status: drmNoticeMalformed
-            ? 'malformed'
-            : drmNotice === null
-              ? 'not_supplied'
-              : 'supplied',
-          rawText: drmNotice,
-        },
+        thirdPartyAccount: accountNotice,
+        drmOrLauncher: drmNotice,
         absenceMeaning: 'not_supplied_is_not_evidence_of_absence',
       },
       languageSupport: {
@@ -1027,21 +1027,11 @@ export class SteamAPIClient {
         if (decodedBytes.toString('base64url') !== options.cursor) {
           throw new Error('Cursor encoding is not canonical');
         }
-        const decoded = JSON.parse(decodedBytes.toString('utf8')) as Record<string, unknown>;
-        if (
-          typeof decoded.before !== 'number' ||
-          !Number.isInteger(decoded.before) ||
-          decoded.before < 0 ||
-          decoded.before > 4294967295 ||
-          !Array.isArray(decoded.seenIds) ||
-          decoded.seenIds.length === 0 ||
-          decoded.seenIds.length > 100 ||
-          !decoded.seenIds.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 64)
-        ) {
-          throw new Error('Cursor has an invalid shape');
-        }
+        const decoded = appAnnouncementCursorSchema.parse(
+          JSON.parse(decodedBytes.toString('utf8'))
+        );
         boundaryTimestamp = decoded.before;
-        seenBoundaryIds = [...new Set(decoded.seenIds as string[])];
+        seenBoundaryIds = [...new Set(decoded.seenIds)];
       } catch {
         throw new Error('Invalid app announcement cursor');
       }

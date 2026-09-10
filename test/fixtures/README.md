@@ -26,3 +26,10 @@ unavailable rather than becoming successful empty results. Tests mutate the save
 to cover size limits, mismatched identifiers, missing replies, and out-of-range pages.
 
 Automated tests load only these local fixtures and mock HTTP calls. They do not contact Steam.
+
+## Structured language fixture
+
+`store-items-structured-languages.json` is a synthetic Store response covering known and
+unknown language IDs. IDs 25 through 28 mean Arabic, Ukrainian, Latin American Spanish,
+and Vietnamese. The regression expectations use
+[Valve's language mapping preserved in SteamTracking](https://github.com/SteamDatabase/SteamTracking/blob/ace2c5488e0436883cae420e183dc1d6b50256f4/store.steampowered.com/public/javascript/applications/interactive_recommender/main.js#L549-L562).
