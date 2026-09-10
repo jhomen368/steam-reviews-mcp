@@ -63,6 +63,7 @@ For Docker Compose:
 services:
   steam-reviews-mcp:
     image: ghcr.io/jhomen368/steam-reviews-mcp:latest
+    container_name: steam-reviews-mcp
     ports:
       - "8086:8086"
     restart: unless-stopped
