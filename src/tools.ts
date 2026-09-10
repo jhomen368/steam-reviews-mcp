@@ -2,6 +2,10 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { analyzeTopicFocused, summarizeReviews } from './utils/analysis.js';
 import {
+  fetchDiscussionThreadSchema,
+  searchDiscussionsSchema,
+} from './utils/community-discussions.js';
+import {
   DEFAULT_STORE_COUNTRY,
   DEFAULT_STORE_LANGUAGE,
   STORE_COUNTRY_CODES,
@@ -14,10 +18,14 @@ import type {
   FetchReviewsInput,
   FetchAppAnnouncementsInput,
   AppAnnouncementsResponse,
+  DiscussionSearchResponse,
+  DiscussionThreadResponse,
+  FetchDiscussionThreadInput,
   GameInfoCriteria,
   PaginatedReviewsResponse,
   Review,
   ReviewStats,
+  SearchDiscussionsInput,
   SteamDeckCompatibility,
   SteamGame,
   SteamGameInfo,
@@ -46,6 +54,8 @@ interface SteamSource {
     appId: number,
     options?: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'>
   ): Promise<AppAnnouncementsResponse>;
+  searchDiscussions(input: SearchDiscussionsInput): Promise<DiscussionSearchResponse>;
+  getDiscussionThread(input: FetchDiscussionThreadInput): Promise<DiscussionThreadResponse>;
 }
 
 const searchTermSchema = z.string().trim().min(1);
@@ -489,6 +499,91 @@ export const tools: Tool[] = [
       required: ['appId'],
     },
   },
+  {
+    name: 'search_app_discussions',
+    description:
+      'Experimental, read-only search of public Steam Community discussions for one app. Fetches one page with at most 50 matching posts, grouped by thread. matchingPostsObserved counts only the fetched sample; author and date describe each match, not thread creation. Community user claims and repetition are not verification. Returns provenance, availability status and reason, and bounded pagination. Pass a returned identifier to fetch_discussion_thread, which starts at page 1 even when a match links to a later reply. Paginate manually; results are not exhaustive.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: {
+          type: 'integer',
+          description: 'Steam AppID whose public discussions should be searched',
+          minimum: 1,
+          maximum: 4294967295,
+        },
+        query: {
+          type: 'string',
+          description:
+            'Non-blank search query; maximum 256 input characters including surrounding whitespace. Trimmed before searching.',
+          minLength: 1,
+          maxLength: 256,
+          pattern: '\\S',
+        },
+        sort: {
+          type: 'string',
+          enum: ['relevance', 'time'],
+          default: 'relevance',
+          description: 'Steam search order; defaults to relevance',
+        },
+        page: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10000,
+          default: 1,
+          description: 'One search page to fetch; use pagination.nextPage to request another page',
+        },
+      },
+      required: ['appId', 'query'],
+    },
+  },
+  {
+    name: 'fetch_discussion_thread',
+    description:
+      'Experimental, read-only retrieval of one public Steam Community discussion page by app, forum, and thread IDs, not an arbitrary URL. Returns the identifier, title, opener and up to 50 replies, with text capped at 20,000 characters per post, links, displayed Steam markers, timestamps, deleted status and truncation flags. Steam markers do not establish an employer, publisher, or job title. Community user claims and repetition are not verification. Check status, reason and pagination for blocked, unavailable or partial evidence. Defaults to page 1; a search-match fragment does not select the reply page. Paginate manually; a page is not an exhaustive thread.',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        appId: {
+          type: 'integer',
+          description: 'Steam AppID from the discussion identifier',
+          minimum: 1,
+          maximum: 4294967295,
+        },
+        forumId: {
+          type: 'string',
+          pattern: '^(0|[1-9][0-9]{0,19})$',
+          description: 'Forum ID from the discussion identifier, kept as a decimal string',
+        },
+        threadId: {
+          type: 'string',
+          pattern: '^[1-9][0-9]{0,19}$',
+          description: 'Thread ID from the discussion identifier, kept as a decimal string',
+        },
+        page: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10000,
+          default: 1,
+          description:
+            'One thread page to fetch; defaults to 1 regardless of search-match fragments',
+        },
+      },
+      required: ['appId', 'forumId', 'threadId'],
+    },
+  },
 ];
 
 /** Create the transport-neutral Steam review tool module. */
@@ -803,6 +898,22 @@ export function createToolModule(steamClient: SteamSource) {
     };
   }
 
+  /** Search one app's public Community discussions. */
+  async function executeSearchDiscussions(args: unknown) {
+    const result = await steamClient.searchDiscussions(searchDiscussionsSchema.parse(args));
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+    };
+  }
+
+  /** Retrieve one bounded Community thread page. */
+  async function executeFetchDiscussionThread(args: unknown) {
+    const result = await steamClient.getDiscussionThread(fetchDiscussionThreadSchema.parse(args));
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+    };
+  }
+
   /** Dispatch a validated tool name to its implementation. */
   async function executeTool(name: string, args: unknown) {
     if (name === 'search_steam_games') return executeSearchGames(args);
@@ -810,6 +921,8 @@ export function createToolModule(steamClient: SteamSource) {
     if (name === 'fetch_reviews') return executeFetchReviews(args);
     if (name === 'analyze_reviews') return executeAnalyzeReviews(args);
     if (name === 'fetch_app_announcements') return executeFetchAppAnnouncements(args);
+    if (name === 'search_app_discussions') return executeSearchDiscussions(args);
+    if (name === 'fetch_discussion_thread') return executeFetchDiscussionThread(args);
     throw new Error(`Unknown tool: ${name}`);
   }
 

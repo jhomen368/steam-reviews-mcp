@@ -48,6 +48,14 @@
         {
           "name": "fetch_app_announcements",
           "description": "Fetch official Steam Community announcements, patch notes, and hotfixes"
+        },
+        {
+          "name": "search_app_discussions",
+          "description": "Experimental read-only search of app discussions, grouped by thread with bounded community evidence"
+        },
+        {
+          "name": "fetch_discussion_thread",
+          "description": "Experimental read-only retrieval of one discussion page by identifier, with posts, provenance, and pagination limits"
         }
       ]
     }

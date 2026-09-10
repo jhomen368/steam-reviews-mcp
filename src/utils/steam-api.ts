@@ -9,13 +9,19 @@
  */
 
 import axios from 'axios';
-import type { AxiosResponse } from 'axios';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as cheerio from 'cheerio';
 import { CacheManager } from './cache.js';
 import { RateLimiter } from './rate-limit.js';
 import { retryWithBackoff } from './retry.js';
 import { DEFAULT_STOREFRONT, steamLanguageForId } from './storefront.js';
 import type { StorefrontOptions } from './storefront.js';
+import {
+  parseDiscussionSearch,
+  searchDiscussionsSchema,
+  parseDiscussionThread,
+  fetchDiscussionThreadSchema,
+} from './community-discussions.js';
 import type {
   ServerConfig,
   SteamGame,
@@ -32,6 +38,11 @@ import type {
   SteamAppNewsResponse,
   SteamDeckCompatibility,
   SteamSupportedLanguage,
+  SearchDiscussionsInput,
+  DiscussionSearchResponse,
+  DiscussionThreadResponse,
+  FetchDiscussionThreadInput,
+  CommunityResponse,
 } from '../types.js';
 
 /**
@@ -103,6 +114,7 @@ export class SteamAPIClient {
    * @param url - The full URL to fetch
    * @param cacheKey - Optional cache key for storing/retrieving cached responses
    * @param cacheTTL - Optional TTL in milliseconds for the cache entry
+   * @param options - Optional redirect, timeout, response-size, and response-type bounds
    * @returns Promise resolving to the typed response data
    * @throws Error if the request fails after all retries
    *
@@ -119,7 +131,15 @@ export class SteamAPIClient {
    * );
    * ```
    */
-  async get<T>(url: string, cacheKey?: string, cacheTTL?: number): Promise<T> {
+  async get<T>(
+    url: string,
+    cacheKey?: string,
+    cacheTTL?: number,
+    options?: Pick<
+      AxiosRequestConfig,
+      'maxRedirects' | 'timeout' | 'maxContentLength' | 'responseType'
+    >
+  ): Promise<T> {
     // Step 1: Check cache first (if caching is enabled and key provided)
     if (this.config.cacheEnabled && cacheKey) {
       const cached = this.cache.get(cacheKey) as T | undefined;
@@ -137,6 +157,7 @@ export class SteamAPIClient {
     const response = await retryWithBackoff<AxiosResponse<T>>(
       async () => {
         return axios.get<T>(url, {
+          ...options,
           headers: {
             'User-Agent': USER_AGENT,
           },
@@ -202,6 +223,67 @@ export class SteamAPIClient {
    */
   clearCache(): void {
     this.cache.clear();
+  }
+
+  /** Apply anonymous request bounds and discard cached access or parsing failures. */
+  private async getCommunityPage<T extends CommunityResponse>(
+    url: string,
+    parse: (html: unknown) => T
+  ): Promise<T> {
+    const cacheKey = `community_${url}`;
+    let html: unknown;
+    try {
+      html = await this.get<unknown>(url, cacheKey, this.config.cacheTTL.statistics, {
+        maxRedirects: 0,
+        timeout: 15000,
+        maxContentLength: 2_000_000,
+        responseType: 'text',
+      });
+    } catch (error) {
+      const result = parse(undefined);
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      result.status = 'unavailable';
+      result.reason = 'request_failed';
+      if (status !== undefined && status >= 300 && status < 400) {
+        result.status = 'blocked';
+        result.reason = 'redirect_not_followed';
+      } else if (status === 401 || status === 403 || status === 429) {
+        result.status = 'blocked';
+        result.reason =
+          status === 401 ? 'login_required' : status === 403 ? 'access_denied' : 'rate_limited';
+      } else if (status === 404 || status === 410) {
+        result.reason = 'not_found_or_deleted';
+      }
+      result.pagination.pagesFetched = 0;
+      return result;
+    }
+    const result = parse(html);
+    // Do not keep interstitials or incomplete markup after Steam becomes readable again.
+    if (result.status !== 'available') this.cache.delete(cacheKey);
+    return result;
+  }
+
+  /** Search one public Community page, grouped by discussion thread. */
+  async searchDiscussions(input: SearchDiscussionsInput): Promise<DiscussionSearchResponse> {
+    const validated = searchDiscussionsSchema.parse(input);
+    const url = new URL(`https://steamcommunity.com/app/${validated.appId}/discussions/search/`);
+    url.search = new URLSearchParams({
+      q: validated.query,
+      sort: validated.sort,
+      p: String(validated.page),
+      l: 'english',
+    }).toString();
+    return this.getCommunityPage(url.href, (html) =>
+      parseDiscussionSearch(html, validated, url.href)
+    );
+  }
+
+  /** Read one public discussion reply page from a search result's identifiers. */
+  async getDiscussionThread(input: FetchDiscussionThreadInput): Promise<DiscussionThreadResponse> {
+    const validated = fetchDiscussionThreadSchema.parse(input);
+    const { appId, forumId, threadId, page } = validated;
+    const url = `https://steamcommunity.com/app/${appId}/discussions/${forumId}/${threadId}/?ctp=${page}&l=english`;
+    return this.getCommunityPage(url, (html) => parseDiscussionThread(html, validated, url));
   }
 
   /**

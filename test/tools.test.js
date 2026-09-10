@@ -42,6 +42,8 @@ test('lists the Steam research tools', () => {
       'fetch_reviews',
       'analyze_reviews',
       'fetch_app_announcements',
+      'search_app_discussions',
+      'fetch_discussion_thread',
     ]
   );
 });
@@ -67,6 +69,53 @@ test('publishes storefront country and Steam language inputs', () => {
   assert.equal(gameInfoTool.inputSchema.properties.language.default, 'english');
   assert.equal(gameInfoTool.inputSchema.properties.language.enum.includes('german'), true);
   assert.equal(gameInfoTool.inputSchema.properties.language.enum.includes('en'), false);
+});
+
+test('publishes bounded experimental read-only discussion tools', () => {
+  const tools = createToolModule({}).tools;
+  const search = tools.find((tool) => tool.name === 'search_app_discussions');
+  const thread = tools.find((tool) => tool.name === 'fetch_discussion_thread');
+
+  for (const tool of [search, thread]) {
+    assert.ok(tool);
+    assert.match(tool.description, /experimental/i);
+    assert.deepEqual(tool.annotations, {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    });
+    assert.equal(tool.inputSchema.type, 'object');
+    const { appId, page } = tool.inputSchema.properties;
+    assert.equal(appId.type, 'integer');
+    assert.equal(appId.minimum, 1);
+    assert.equal(appId.maximum, 4294967295);
+    assert.equal(page.type, 'integer');
+    assert.equal(page.minimum, 1);
+    assert.equal(page.maximum, 10000);
+    assert.equal(page.default, 1);
+  }
+
+  assert.deepEqual(Object.keys(search.inputSchema.properties), ['appId', 'query', 'sort', 'page']);
+  assert.deepEqual(search.inputSchema.required, ['appId', 'query']);
+  assert.equal(search.inputSchema.properties.query.type, 'string');
+  assert.equal(search.inputSchema.properties.query.minLength, 1);
+  assert.equal(search.inputSchema.properties.query.maxLength, 256);
+  assert.equal(search.inputSchema.properties.query.pattern, '\\S');
+  assert.equal(search.inputSchema.properties.sort.type, 'string');
+  assert.deepEqual(search.inputSchema.properties.sort.enum, ['relevance', 'time']);
+  assert.equal(search.inputSchema.properties.sort.default, 'relevance');
+  assert.deepEqual(Object.keys(thread.inputSchema.properties), [
+    'appId',
+    'forumId',
+    'threadId',
+    'page',
+  ]);
+  assert.deepEqual(thread.inputSchema.required, ['appId', 'forumId', 'threadId']);
+  assert.equal(thread.inputSchema.properties.forumId.type, 'string');
+  assert.equal(thread.inputSchema.properties.forumId.pattern, '^(0|[1-9][0-9]{0,19})$');
+  assert.equal(thread.inputSchema.properties.threadId.type, 'string');
+  assert.equal(thread.inputSchema.properties.threadId.pattern, '^[1-9][0-9]{0,19}$');
 });
 
 test('searches for a single Steam game', async () => {
@@ -585,6 +634,423 @@ test('rejects invalid official announcement inputs before requesting Steam', asy
     assert.equal(result.isError, true);
   }
   assert.equal(requestCount, 0);
+});
+
+test('searches app discussions with trimmed query and default sort and page', async () => {
+  const received = [];
+  const response = {
+    appId: 620,
+    source: 'steam_community_discussions',
+    experimental: true,
+    evidenceNotice: 'Community user claims; repetition does not verify a claim.',
+    steamUrl: 'https://steamcommunity.com/app/620/discussions/search/?q=stutter',
+    status: 'available',
+    query: 'stutter',
+    sort: 'relevance',
+    threads: [],
+    pagination: {
+      page: 1,
+      pagesFetched: 1,
+      maxPages: 1,
+      maxItems: 50,
+      totalItems: 0,
+      hasMore: false,
+      nextPage: null,
+      complete: true,
+    },
+  };
+  const toolModule = createToolModule({
+    async searchDiscussions(input) {
+      received.push(input);
+      return response;
+    },
+  });
+
+  const result = await toolModule.execute('search_app_discussions', {
+    appId: 620,
+    query: '  stutter\n',
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(received, [{ appId: 620, query: 'stutter', sort: 'relevance', page: 1 }]);
+  assert.deepEqual(JSON.parse(result.content[0].text), response);
+});
+
+test('counts surrounding whitespace toward the discussion query input limit', async () => {
+  const received = [];
+  const toolModule = createToolModule({
+    async searchDiscussions(input) {
+      received.push(input);
+      return { threads: [] };
+    },
+  });
+
+  for (const query of [` ${'x'.repeat(255)} `, ` ${'x'.repeat(256)} `, ' \n\t']) {
+    const result = await toolModule.execute('search_app_discussions', { appId: 620, query });
+    assert.deepEqual(received, [], 'invalid query must not reach the source');
+    assert.equal(result.isError, true);
+    assert.equal(JSON.parse(result.content[0].text).message, 'Validation error');
+  }
+
+  const result = await toolModule.execute('search_app_discussions', {
+    appId: 620,
+    query: ` ${'x'.repeat(254)} `,
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(received, [
+    { appId: 620, query: 'x'.repeat(254), sort: 'relevance', page: 1 },
+  ]);
+});
+
+test('fetches a discussion identifier from page one by default', async () => {
+  const received = [];
+  const identifier = { appId: 620, forumId: '0', threadId: '12345678901234567890' };
+  const response = {
+    appId: 620,
+    source: 'steam_community_discussions',
+    experimental: true,
+    evidenceNotice: 'Steam markers do not establish a publisher, employer, or job title.',
+    steamUrl: 'https://steamcommunity.com/app/620/discussions/0/12345678901234567890/',
+    status: 'available',
+    identifier,
+    title: 'Stutter after update',
+    opener: {
+      id: '12345678901234567890',
+      steamUrl: 'https://steamcommunity.com/app/620/discussions/0/12345678901234567890/',
+      authorLabel: 'Player',
+      timestamp: 1788652800,
+      timestampLabel: 'Sep 6, 2026',
+      text: 'I see stutter.\nDoes anyone else?',
+      links: [{ text: 'Details', url: 'https://example.com/details' }],
+      steamMarkers: [{ kind: 'developer', label: 'Developer' }],
+      status: 'available',
+      truncated: false,
+    },
+    replies: [],
+    pagination: {
+      page: 1,
+      pagesFetched: 1,
+      maxPages: 1,
+      maxItems: 50,
+      totalItems: 0,
+      hasMore: false,
+      nextPage: null,
+      complete: true,
+    },
+  };
+  const toolModule = createToolModule({
+    async getDiscussionThread(input) {
+      received.push(input);
+      return response;
+    },
+  });
+
+  const result = await toolModule.execute('fetch_discussion_thread', identifier);
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(received, [{ ...identifier, page: 1 }]);
+  assert.deepEqual(JSON.parse(result.content[0].text), response);
+});
+
+test('accepts discussion input boundaries and forwards explicit sort and page', async () => {
+  const searches = [];
+  const threads = [];
+  const toolModule = createToolModule({
+    async searchDiscussions(input) {
+      searches.push(input);
+      return { threads: [] };
+    },
+    async getDiscussionThread(input) {
+      threads.push(input);
+      return { opener: null, replies: [] };
+    },
+  });
+  const searchInputs = [
+    { appId: 1, query: 'x', sort: 'relevance', page: 1 },
+    { appId: 4294967295, query: 'x'.repeat(256), sort: 'time', page: 10000 },
+  ];
+  const threadInputs = [
+    { appId: 1, forumId: '0', threadId: '1', page: 1 },
+    {
+      appId: 4294967295,
+      forumId: '12345678901234567890',
+      threadId: '99999999999999999999',
+      page: 10000,
+    },
+  ];
+
+  for (const input of searchInputs) {
+    assert.equal((await toolModule.execute('search_app_discussions', input)).isError, undefined);
+  }
+  for (const input of threadInputs) {
+    assert.equal((await toolModule.execute('fetch_discussion_thread', input)).isError, undefined);
+  }
+  assert.deepEqual(searches, searchInputs);
+  assert.deepEqual(threads, threadInputs);
+});
+
+test('rejects invalid discussion inputs before requesting the source', async () => {
+  let requests = 0;
+  const toolModule = createToolModule({
+    async searchDiscussions() {
+      requests += 1;
+    },
+    async getDiscussionThread() {
+      requests += 1;
+    },
+  });
+  const search = { appId: 620, query: 'stutter' };
+  const thread = { appId: 620, forumId: '0', threadId: '123' };
+  const cases = [
+    [
+      'search_app_discussions',
+      search,
+      'query',
+      [undefined, null, '', ' \n\t', 'x'.repeat(257), 123],
+    ],
+    ['search_app_discussions', search, 'sort', ['recent', '', null]],
+    [
+      'fetch_discussion_thread',
+      thread,
+      'forumId',
+      [undefined, null, 0, '', '-1', '00', '01', '1'.repeat(21), '../0', '0?x=1'],
+    ],
+    [
+      'fetch_discussion_thread',
+      thread,
+      'threadId',
+      [
+        undefined,
+        null,
+        123,
+        '',
+        '0',
+        '-1',
+        '01',
+        '1'.repeat(21),
+        '123#c456',
+        'https://example.com/',
+      ],
+    ],
+  ];
+  for (const [name, input] of [
+    ['search_app_discussions', search],
+    ['fetch_discussion_thread', thread],
+  ]) {
+    cases.push([name, input, 'appId', [undefined, null, 0, -1, 1.5, 4294967296, '620']]);
+    cases.push([name, input, 'page', [null, 0, -1, 1.5, 10001, '2']]);
+  }
+
+  for (const [name, input, field, invalidValues] of cases) {
+    for (const value of invalidValues) {
+      const result = await toolModule.execute(name, { ...input, [field]: value });
+      const error = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, true, `${name} should reject ${field}=${String(value)}`);
+      assert.equal(error.error, true);
+      assert.equal(error.message, 'Validation error');
+      assert.equal(error.tool, name);
+      assert.ok(error.details.startsWith(`${field}:`));
+    }
+  }
+  for (const name of ['search_app_discussions', 'fetch_discussion_thread']) {
+    const result = await toolModule.execute(name, { url: 'https://example.com/' });
+    assert.equal(result.isError, true);
+    assert.equal(JSON.parse(result.content[0].text).message, 'Validation error');
+  }
+  assert.equal(requests, 0);
+});
+
+test('preserves partial discussion evidence without fetching the next page', async () => {
+  const identifier = { appId: 620, forumId: '0', threadId: '123' };
+  const steamUrl = 'https://steamcommunity.com/app/620/discussions/0/123/';
+  const context = {
+    appId: 620,
+    source: 'steam_community_discussions',
+    experimental: true,
+    evidenceNotice:
+      'Community user claims; repetition is not verification. Markers do not verify jobs.',
+    status: 'partial',
+    reason: 'text_truncated',
+    pagination: {
+      page: 2,
+      pagesFetched: 1,
+      maxPages: 1,
+      maxItems: 50,
+      totalItems: 120,
+      hasMore: true,
+      nextPage: 3,
+      complete: false,
+    },
+  };
+  const searchResponse = {
+    ...context,
+    steamUrl: 'https://steamcommunity.com/app/620/discussions/search/?q=stutter&p=2',
+    query: 'stutter',
+    sort: 'time',
+    threads: [
+      {
+        identifier,
+        steamUrl,
+        title: 'Stutter after update',
+        replyCount: 160,
+        matchingPostsObserved: 1,
+        matches: [
+          {
+            postId: '456',
+            steamUrl: `${steamUrl}#c456`,
+            authorLabel: 'Reply author',
+            timestamp: null,
+            timestampLabel: 'Yesterday',
+            snippet: 'x'.repeat(20000),
+            truncated: true,
+          },
+        ],
+      },
+    ],
+  };
+  const threadResponse = {
+    ...context,
+    steamUrl,
+    identifier,
+    title: 'Stutter after update',
+    opener: null,
+    replies: [
+      {
+        id: '456',
+        steamUrl: `${steamUrl}#c456`,
+        authorLabel: 'Reply author',
+        timestamp: null,
+        timestampLabel: 'Yesterday',
+        text: 'x'.repeat(20000),
+        links: [{ text: 'Details', url: 'https://example.com/details' }],
+        steamMarkers: [{ kind: 'moderator', label: 'Moderator' }],
+        status: 'available',
+        truncated: true,
+      },
+      {
+        id: '789',
+        steamUrl: `${steamUrl}#c789`,
+        authorLabel: null,
+        timestamp: null,
+        timestampLabel: null,
+        text: null,
+        links: [],
+        steamMarkers: [],
+        status: 'deleted',
+        truncated: false,
+      },
+    ],
+  };
+  const received = [];
+  const toolModule = createToolModule({
+    async searchDiscussions(input) {
+      received.push(input);
+      return searchResponse;
+    },
+    async getDiscussionThread(input) {
+      received.push(input);
+      return threadResponse;
+    },
+  });
+  const searchInput = { appId: 620, query: 'stutter', sort: 'time', page: 2 };
+  const threadInput = { ...identifier, page: 2 };
+
+  const searchResult = await toolModule.execute('search_app_discussions', searchInput);
+  const threadResult = await toolModule.execute('fetch_discussion_thread', threadInput);
+
+  assert.equal(searchResult.isError, undefined);
+  assert.equal(threadResult.isError, undefined);
+  assert.deepEqual(JSON.parse(searchResult.content[0].text), searchResponse);
+  assert.deepEqual(JSON.parse(threadResult.content[0].text), threadResponse);
+  assert.deepEqual(received, [searchInput, threadInput]);
+});
+
+test('passes blocked and unavailable discussions through as evidence, not MCP errors', async () => {
+  const identifier = { appId: 620, forumId: '0', threadId: '123' };
+  for (const [status, reason, pagesFetched] of [
+    ['blocked', 'login_required', 1],
+    ['unavailable', 'http_error', 0],
+  ]) {
+    const context = {
+      appId: 620,
+      source: 'steam_community_discussions',
+      experimental: true,
+      evidenceNotice: 'Community user claims; repetition does not verify a claim.',
+      status,
+      reason,
+      pagination: {
+        page: 1,
+        pagesFetched,
+        maxPages: 1,
+        maxItems: 50,
+        totalItems: null,
+        hasMore: null,
+        nextPage: null,
+        complete: false,
+      },
+    };
+    const searchResponse = {
+      ...context,
+      steamUrl: 'https://steamcommunity.com/app/620/discussions/search/?q=stutter',
+      query: 'stutter',
+      sort: 'relevance',
+      threads: [],
+    };
+    const threadResponse = {
+      ...context,
+      steamUrl: 'https://steamcommunity.com/app/620/discussions/0/123/',
+      identifier,
+      title: null,
+      opener: null,
+      replies: [],
+    };
+    const toolModule = createToolModule({
+      async searchDiscussions() {
+        return searchResponse;
+      },
+      async getDiscussionThread() {
+        return threadResponse;
+      },
+    });
+
+    const searchResult = await toolModule.execute('search_app_discussions', {
+      appId: 620,
+      query: 'stutter',
+    });
+    const threadResult = await toolModule.execute('fetch_discussion_thread', identifier);
+
+    assert.equal(searchResult.isError, undefined);
+    assert.equal(threadResult.isError, undefined);
+    assert.deepEqual(JSON.parse(searchResult.content[0].text), searchResponse);
+    assert.deepEqual(JSON.parse(threadResult.content[0].text), threadResponse);
+  }
+});
+
+test('maps thrown discussion source failures to shared MCP error results', async () => {
+  for (const failure of [new Error('Community request failed'), 'Community request failed']) {
+    const toolModule = createToolModule({
+      async searchDiscussions() {
+        throw failure;
+      },
+      async getDiscussionThread() {
+        throw failure;
+      },
+    });
+    for (const [name, input] of [
+      ['search_app_discussions', { appId: 620, query: 'stutter' }],
+      ['fetch_discussion_thread', { appId: 620, forumId: '0', threadId: '123' }],
+    ]) {
+      const result = await toolModule.execute(name, input);
+
+      assert.equal(result.isError, true);
+      assert.deepEqual(JSON.parse(result.content[0].text), {
+        error: true,
+        message: 'Community request failed',
+        tool: name,
+      });
+    }
+  }
 });
 
 test('treats dayRange zero as an all-time review query', async () => {

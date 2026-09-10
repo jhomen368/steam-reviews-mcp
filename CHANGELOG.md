@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added experimental, read-only `search_app_discussions` and `fetch_discussion_thread` tools with validated app and discussion IDs, shared schemas, and one-page retrieval. Search groups matching posts by thread; thread retrieval preserves post text, links, Steam markers, and deletion or truncation status.
+- Added discussion provenance, explicit partial, blocked, and unavailable results, bounded manual pagination, and documentation distinguishing community claims from verification or official game communication.
 - **Official app announcements**: Added `fetch_app_announcements` with full available Steam markup, publication details, backward pagination, and explicit body status
 - **Steam Deck compatibility**: Added Valve's compatibility category, raw category code, and available test-result tokens to `get_game_info`, with warnings when the optional evidence is unavailable
 - **Regional game information**: Added validated store country and Steam language requests, regional quote context, explicit unavailable pricing states, and locale-isolated caching to `get_game_info`
 - **Purchase requirements and Store features**: Added raw account and DRM notices, structured and fallback language declarations, localized Store category IDs and labels, and isolated enrichment warnings to `get_game_info`
+
+### Fixed
+
+- Suppressed dotenv status and debug output before loading tool dependencies so the default stdio server emits only MCP messages on stdout. Added subprocess regression coverage for initialization and tool listing without a caller-supplied quiet setting.
 
 ## [1.0.3] - 2026-08-29
 

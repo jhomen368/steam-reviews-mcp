@@ -14,9 +14,13 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { config } from './config.js';
-import { createToolModule } from './tools.js';
 import { SteamAPIClient } from './utils/steam-api.js';
 import { VERSION } from './version.js';
+
+// Natural loads dotenv during import; stdout must contain only MCP messages.
+process.env.DOTENV_CONFIG_QUIET = 'true';
+process.env.DOTENV_CONFIG_DEBUG = 'false';
+const { createToolModule } = await import('./tools.js');
 
 const steamClient = new SteamAPIClient(config);
 const toolModule = createToolModule(steamClient);
