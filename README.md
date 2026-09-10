@@ -1,7 +1,7 @@
 # Steam Reviews MCP Server
 
 [![npm](https://img.shields.io/npm/v/@jhomen368/steam-reviews-mcp)](https://www.npmjs.com/package/@jhomen368/steam-reviews-mcp)
-[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/jhomen368/steam-reviews-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Give your AI assistant access to Steam reviews, game details, patch notes, and

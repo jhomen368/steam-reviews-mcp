@@ -5,7 +5,7 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-09
 
 ### Added
 
@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Suppressed dotenv status and debug output before loading tool dependencies so the default stdio server emits only MCP messages on stdout. Added subprocess regression coverage for initialization and tool listing without a caller-supplied quiet setting.
+- Routed HTTP/SSE client messages to their matching sessions so initialization and tool calls complete. Closed connections now remove their sessions, and unknown sessions return an error.
+- Corrected Steam language IDs for Arabic, Ukrainian, Latin American Spanish, and Vietnamese so structured support declarations report the right languages.
+
+### Changed
+
+- Validated announcement cursors with Zod and shared the normalization of account and DRM notices.
+- Updated Axios and development dependencies.
+
+### Security
+
+- Updated `qs` and `@humanfs/node` to address the reported moderate-severity advisories. The release lockfile reports zero known vulnerabilities in npm audit.
+
+### Documentation
+
+- Shortened the README to focus on setup, example questions, and everyday use. Removed the field-by-field API reference.
+
+### Tests
+
+- Added offline fixtures for the new Steam sources and regression coverage for language IDs and malformed announcement cursors.
+- Added HTTP/SSE client tests for initialization, tool calls, concurrent sessions, and invalid-session handling.
 
 ## [1.0.3] - 2026-08-29
 
