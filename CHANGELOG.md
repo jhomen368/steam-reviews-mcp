@@ -5,6 +5,12 @@ All notable changes to steam-reviews-mcp will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-10
+
+### Fixed
+
+- `fetch_app_announcements` now treats an empty or whitespace cursor as "first page" instead of failing validation, so clients that serialize omitted optional parameters as `""` can request the latest announcements. Empty and omitted cursors share the same cache entry.
+
 ## [1.1.0] - 2026-09-09
 
 ### Added

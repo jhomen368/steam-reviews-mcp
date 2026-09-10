@@ -628,12 +628,32 @@ test('rejects invalid official announcement inputs before requesting Steam', asy
     { appId: 0 },
     { appId: 620, limit: 0 },
     { appId: 620, limit: 101 },
-    { appId: 620, cursor: '' },
   ]) {
     const result = await toolModule.execute('fetch_app_announcements', input);
     assert.equal(result.isError, true);
   }
   assert.equal(requestCount, 0);
+});
+
+test('treats empty and whitespace cursors as a first-page fetch', async () => {
+  let requestCount = 0;
+  let receivedCursor;
+  const toolModule = createToolModule({
+    async getAppAnnouncements(_appId, options) {
+      requestCount += 1;
+      receivedCursor = options.cursor;
+    },
+  });
+
+  for (const cursor of ['', '   ', undefined]) {
+    const result = await toolModule.execute(
+      'fetch_app_announcements',
+      cursor === undefined ? { appId: 620 } : { appId: 620, cursor }
+    );
+    assert.equal(result.isError, undefined);
+  }
+  assert.equal(requestCount, 3);
+  assert.equal(receivedCursor, undefined);
 });
 
 test('searches app discussions with trimmed query and default sort and page', async () => {
