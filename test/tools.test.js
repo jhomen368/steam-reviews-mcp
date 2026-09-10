@@ -636,12 +636,10 @@ test('rejects invalid official announcement inputs before requesting Steam', asy
 });
 
 test('treats empty and whitespace cursors as a first-page fetch', async () => {
-  let requestCount = 0;
-  let receivedCursor;
+  const receivedCursors = [];
   const toolModule = createToolModule({
     async getAppAnnouncements(_appId, options) {
-      requestCount += 1;
-      receivedCursor = options.cursor;
+      receivedCursors.push(options.cursor);
     },
   });
 
@@ -652,8 +650,7 @@ test('treats empty and whitespace cursors as a first-page fetch', async () => {
     );
     assert.equal(result.isError, undefined);
   }
-  assert.equal(requestCount, 3);
-  assert.equal(receivedCursor, undefined);
+  assert.deepEqual(receivedCursors, ['', '   ', undefined]);
 });
 
 test('searches app discussions with trimmed query and default sort and page', async () => {

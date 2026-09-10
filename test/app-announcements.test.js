@@ -98,6 +98,22 @@ test('marks a trailing ellipsis as possible truncation and uses the default coun
   assert.equal(result.announcements[0].bodyStatus, 'possibly_truncated');
 });
 
+test('normalizes empty and whitespace cursors to the first-page request', async () => {
+  const client = new FixtureSteamClient(await loadFixture('app-announcements-complete'));
+
+  await client.getAppAnnouncements(620, { limit: 1, cursor: '' });
+  await client.getAppAnnouncements(620, { limit: 1, cursor: '   ' });
+  await client.getAppAnnouncements(620, { limit: 1 });
+  await client.getAppAnnouncements(620, { limit: 1, cursor: '   ' });
+
+  for (const request of client.requests) {
+    const params = Object.fromEntries(new URL(request.url).searchParams);
+    assert.equal(params.enddate, undefined);
+    assert.equal(request.cacheKey, 'app_announcements_620_1_latest');
+  }
+  assert.equal(client.requests.length, 4);
+});
+
 test('paginates every announcement that shares a boundary timestamp', async () => {
   const client = new FixtureSteamClient(await loadFixture('app-announcements-pagination'));
 
