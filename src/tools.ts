@@ -147,7 +147,7 @@ const analyzeReviewsSchema = z.object({
 const fetchAppAnnouncementsSchema = z.object({
   appId: z.number().int().positive().max(4294967295),
   limit: z.number().int().min(1).max(100).optional(),
-  cursor: z.string().min(1).max(8192).optional(),
+  cursor: z.string().max(8192).optional(),
 });
 
 /** Build the human-readable summary returned with game information. */

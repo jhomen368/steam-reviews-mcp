@@ -1017,14 +1017,15 @@ export class SteamAPIClient {
     options: Pick<FetchAppAnnouncementsInput, 'limit' | 'cursor'> = {}
   ): Promise<AppAnnouncementsResponse> {
     const limit = options.limit ?? 20;
+    const cursor = options.cursor?.trim() || undefined;
     let boundaryTimestamp: number | undefined;
     let seenBoundaryIds: string[] = [];
 
-    if (options.cursor !== undefined) {
+    if (cursor !== undefined) {
       try {
-        if (options.cursor.length > 8192) throw new Error('Cursor is too long');
-        const decodedBytes = Buffer.from(options.cursor, 'base64url');
-        if (decodedBytes.toString('base64url') !== options.cursor) {
+        if (cursor.length > 8192) throw new Error('Cursor is too long');
+        const decodedBytes = Buffer.from(cursor, 'base64url');
+        if (decodedBytes.toString('base64url') !== cursor) {
           throw new Error('Cursor encoding is not canonical');
         }
         const decoded = appAnnouncementCursorSchema.parse(
@@ -1048,7 +1049,7 @@ export class SteamAPIClient {
     }
     params.set('format', 'json');
 
-    const cacheKey = `app_announcements_${appId}_${limit}_${options.cursor ?? 'latest'}`;
+    const cacheKey = `app_announcements_${appId}_${limit}_${cursor ?? 'latest'}`;
     const apiUrl = `https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?${params.toString()}`;
     const response = await this.get<SteamAppNewsResponse>(
       apiUrl,
